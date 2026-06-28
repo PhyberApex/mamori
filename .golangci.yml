@@ -1,3 +1,5 @@
+version: "2"
+
 linters:
   enable:
     - errcheck
@@ -8,9 +10,9 @@ linters:
     - unused
     - gofmt
 
-linters-settings:
-  gofmt:
-    simplify: true
+  settings:
+    gofmt:
+      simplify: true
 
 issues:
   exclude-rules:
