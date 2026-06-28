@@ -4,8 +4,6 @@ title: Referrer-Policy
 permalink: /checks/referrer-policy
 ---
 
-# Referrer-Policy
-
 **Severity:** low
 
 ## What it does

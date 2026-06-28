@@ -4,8 +4,6 @@ title: Content-Security-Policy
 permalink: /checks/content-security-policy
 ---
 
-# Content-Security-Policy
-
 **Severity:** high
 
 ## What it does

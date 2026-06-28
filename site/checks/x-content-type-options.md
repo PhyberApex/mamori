@@ -4,8 +4,6 @@ title: X-Content-Type-Options
 permalink: /checks/x-content-type-options
 ---
 
-# X-Content-Type-Options
-
 **Severity:** medium
 
 ## What it does

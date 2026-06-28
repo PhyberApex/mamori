@@ -4,8 +4,6 @@ title: Strict-Transport-Security
 permalink: /checks/strict-transport-security
 ---
 
-# Strict-Transport-Security
-
 **Severity:** high
 
 ## What it does

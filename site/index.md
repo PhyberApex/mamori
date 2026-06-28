@@ -1,8 +1,7 @@
 ---
 layout: home
+title: mamori check reference
 ---
-
-# mamori check reference
 
 Each check mamori performs is documented here. Every finding includes a link to the relevant page so you can understand the issue and fix it without leaving your terminal.
 

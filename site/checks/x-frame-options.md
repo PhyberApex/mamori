@@ -4,8 +4,6 @@ title: X-Frame-Options
 permalink: /checks/x-frame-options
 ---
 
-# X-Frame-Options
-
 **Severity:** medium
 
 ## What it does
