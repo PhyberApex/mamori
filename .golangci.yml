@@ -1,11 +1,5 @@
 version: "2"
 
-linters:
+formatters:
   enable:
-    - errcheck
-    - gosimple
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
     - gofmt
