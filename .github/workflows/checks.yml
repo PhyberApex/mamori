@@ -1,0 +1,36 @@
+name: Checks
+
+on:
+  workflow_call:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+      - name: Test
+        run: go test -coverprofile=coverage.out ./...
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.out
+
+      - name: Build
+        run: go build ./cmd/mamori

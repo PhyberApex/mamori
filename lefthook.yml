@@ -1,0 +1,10 @@
+pre-commit:
+  commands:
+    fmt:
+      glob: "*.go"
+      run: gofmt -w {staged_files}
+      stage_fixed: true
+    vet:
+      run: go vet ./...
+    lint:
+      run: golangci-lint run ./...

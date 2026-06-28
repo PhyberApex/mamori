@@ -1,0 +1,30 @@
+name: Release Please
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v5
+        id: release
+        with:
+          token: ${{ secrets.GH_PAT }}
+
+  checks:
+    if: needs.release-please.outputs.release_created == 'true'
+    needs: release-please
+    uses: ./.github/workflows/checks.yml
+    secrets: inherit
+
+  goreleaser:
+    if: needs.release-please.outputs.release_created == 'true'
+    needs: [release-please, checks]
+    uses: ./.github/workflows/goreleaser.yml
+    secrets: inherit

@@ -1,0 +1,12 @@
+title: mamori
+description: Concurrent HTTP security header scanner — check reference
+theme: minima
+baseurl: "/mamori"
+url: "https://phyberapex.github.io"
+
+header_pages:
+  - checks/strict-transport-security.md
+  - checks/x-content-type-options.md
+  - checks/x-frame-options.md
+  - checks/content-security-policy.md
+  - checks/referrer-policy.md
