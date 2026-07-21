@@ -27,9 +27,14 @@ func (TerminalReporter) Report(findings []Finding, w io.Writer) error {
 			return err
 		}
 		for _, f := range byURL[url] {
-			line := fmt.Sprintf("  [%s] %s (%s)", strings.ToUpper(string(f.Status)), f.Header, f.Severity)
-			if f.Status != StatusPass && f.Reference != "" {
-				line += " → " + f.Reference
+			var line string
+			if f.Status == StatusError {
+				line = fmt.Sprintf("  [ERROR] %s", f.Message)
+			} else {
+				line = fmt.Sprintf("  [%s] %s (%s)", strings.ToUpper(string(f.Status)), f.Header, f.Severity)
+				if f.Status != StatusPass && f.Reference != "" {
+					line += " → " + f.Reference
+				}
 			}
 			if _, err := fmt.Fprintf(w, "%s\n", line); err != nil {
 				return err

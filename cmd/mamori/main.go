@@ -2,17 +2,24 @@ package main
 
 import (
 	"context"
+	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"time"
 
+	"github.com/PhyberApex/mamori/internal/config"
 	"github.com/PhyberApex/mamori/internal/scanner"
 )
 
 func main() {
 	if err := run(os.Args[1:], stdinIfPiped(), os.Stdout); err != nil {
+		// -h/-help surfaces as flag.ErrHelp after the FlagSet has already
+		// printed usage; that is a clean exit, not a failure.
+		if errors.Is(err, flag.ErrHelp) {
+			return
+		}
 		fmt.Fprintln(os.Stderr, "mamori:", err)
 		os.Exit(1)
 	}
@@ -29,14 +36,15 @@ func stdinIfPiped() io.Reader {
 }
 
 func run(args []string, stdin io.Reader, out io.Writer) error {
-	urls, err := scanner.ResolveTargets(args, stdin)
+	cfg, targets, err := config.Resolve(args, os.Getenv)
 	if err != nil {
 		return err
 	}
-	client := &http.Client{Timeout: 10 * time.Second}
-	findings, err := scanner.Scan(context.Background(), client, scanner.DefaultCheckers(), urls)
+	urls, err := scanner.ResolveTargets(targets, stdin)
 	if err != nil {
 		return err
 	}
+	client := &http.Client{Timeout: cfg.Timeout}
+	findings := scanner.Scan(context.Background(), client, scanner.DefaultCheckers(), urls, cfg.Workers)
 	return scanner.TerminalReporter{}.Report(findings, out)
 }

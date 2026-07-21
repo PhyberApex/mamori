@@ -2,24 +2,60 @@ package scanner
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
+	"sync"
 )
 
-func Scan(ctx context.Context, client *http.Client, checkers []Checker, urls []string) ([]Finding, error) {
-	var findings []Finding
-	for _, url := range urls {
-		headers, err := fetchHeaders(ctx, client, url)
-		if err != nil {
-			return nil, fmt.Errorf("fetching %s: %w", url, err)
-		}
-		for _, f := range RunAll(checkers, headers) {
-			f.URL = url
-			findings = append(findings, f)
-		}
+// Scan fans the URLs out to a fixed pool of worker goroutines. A failed
+// target becomes an error finding instead of aborting the scan, so every
+// target is accounted for in the report.
+func Scan(ctx context.Context, client *http.Client, checkers []Checker, urls []string, workers int) []Finding {
+	jobs := make(chan int)
+	// Each worker writes only to its own job's index, so the slice needs no
+	// mutex: distinct goroutines never touch the same element, and wg.Wait()
+	// is the synchronisation point that makes the writes visible here.
+	perTarget := make([][]Finding, len(urls))
+
+	var wg sync.WaitGroup
+	// Floor at one worker so a bad caller can't create a pool of zero
+	// goroutines, which would deadlock the unbuffered jobs channel below.
+	for range min(max(workers, 1), len(urls)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// Ranging over a channel keeps receiving until it is closed,
+			// which is how each worker knows there is no more work.
+			for i := range jobs {
+				perTarget[i] = scanTarget(ctx, client, checkers, urls[i])
+			}
+		}()
 	}
-	return findings, nil
+	for i := range urls {
+		jobs <- i
+	}
+	close(jobs)
+	wg.Wait()
+
+	// Reassembling by index keeps the report in input order even though
+	// workers finish in arbitrary order.
+	var findings []Finding
+	for _, fs := range perTarget {
+		findings = append(findings, fs...)
+	}
+	return findings
+}
+
+func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, url string) []Finding {
+	headers, err := fetchHeaders(ctx, client, url)
+	if err != nil {
+		return []Finding{{URL: url, Status: StatusError, Message: err.Error()}}
+	}
+	findings := RunAll(checkers, headers)
+	for i := range findings {
+		findings[i].URL = url
+	}
+	return findings
 }
 
 func fetchHeaders(ctx context.Context, client *http.Client, url string) (http.Header, error) {
