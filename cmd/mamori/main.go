@@ -46,5 +46,17 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 	}
 	client := &http.Client{Timeout: cfg.Timeout}
 	findings := scanner.Scan(context.Background(), client, scanner.DefaultCheckers(), urls, cfg.Workers)
-	return scanner.TerminalReporter{}.Report(findings, out)
+	return reporterFor(cfg.Output).Report(findings, out)
+}
+
+// reporterFor returns the Reporter interface, not a concrete type, so run
+// stays indifferent to which implementation it drives — the Go way of
+// selecting a strategy is a small interface plus a switch at the edge.
+func reporterFor(o config.Output) scanner.Reporter {
+	switch o {
+	case config.OutputJSON:
+		return scanner.JSONReporter{}
+	default:
+		return scanner.TerminalReporter{}
+	}
 }
