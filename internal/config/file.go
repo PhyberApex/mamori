@@ -21,7 +21,7 @@ type fileConfig struct {
 	Targets []string `yaml:"targets"`
 	Workers *int     `yaml:"workers"`
 	Timeout *string  `yaml:"timeout"`
-	Output  *string  `yaml:"output"`
+	Output  *Output  `yaml:"output"`
 }
 
 // resolveConfigPath decides which config file, if any, supplies the config
@@ -91,11 +91,7 @@ func applyFileConfig(cfg *Config, fc fileConfig, path string) error {
 		cfg.Timeout = d
 	}
 	if fc.Output != nil {
-		o, err := parseOutput(*fc.Output)
-		if err != nil {
-			return fmt.Errorf("%s: %w", path, err)
-		}
-		cfg.Output = o
+		cfg.Output = *fc.Output
 	}
 	return nil
 }

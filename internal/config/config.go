@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/PhyberApex/mamori/internal/scanner"
+	"gopkg.in/yaml.v3"
 )
 
 // Output is a named string type so the valid formats live next to the type
@@ -59,6 +60,14 @@ func (o *Output) Set(v string) error {
 	}
 	*o = parsed
 	return nil
+}
+
+// UnmarshalYAML lets the config-file loader decode straight into an Output
+// via the same Set used by the flag package, so a config file's output value
+// is validated by the one place that already knows what "known format"
+// means instead of a second string comparison growing elsewhere.
+func (o *Output) UnmarshalYAML(value *yaml.Node) error {
+	return o.Set(value.Value)
 }
 
 // Resolve takes getenv as a function value instead of calling os.Getenv
