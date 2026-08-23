@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strconv"
 	"time"
+
+	"github.com/PhyberApex/mamori/internal/scanner"
 )
 
 // Output is a named string type so the valid formats live next to the type
@@ -30,6 +32,10 @@ type Config struct {
 	Workers int
 	Timeout time.Duration
 	Output  Output
+	// FailOn is the -fail-on threshold. The zero value ("") is scanner.Severity's
+	// own stand-in for "none" — never fail — so Config's zero value is already
+	// the correct default without a separate sentinel constant.
+	FailOn scanner.Severity
 }
 
 func parseOutput(v string) (Output, error) {
@@ -83,11 +89,17 @@ func Resolve(args []string, getenv func(string) string) (Config, []string, error
 		}
 		cfg.Output = o
 	}
+	if v := getenv("MAMORI_FAIL_ON"); v != "" {
+		if err := cfg.FailOn.Set(v); err != nil {
+			return Config{}, nil, fmt.Errorf("MAMORI_FAIL_ON: %w", err)
+		}
+	}
 
 	fs := flag.NewFlagSet("mamori", flag.ContinueOnError)
 	fs.IntVar(&cfg.Workers, "workers", cfg.Workers, "number of concurrent scan workers")
 	fs.DurationVar(&cfg.Timeout, "timeout", cfg.Timeout, "HTTP request timeout (e.g. 5s)")
 	fs.Var(&cfg.Output, "o", "output format: terminal or json")
+	fs.Var(&cfg.FailOn, "fail-on", "exit non-zero on findings at or above this severity: low, medium, high, or none")
 	if err := fs.Parse(args); err != nil {
 		return Config{}, nil, err
 	}

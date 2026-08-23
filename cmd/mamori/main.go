@@ -13,6 +13,13 @@ import (
 	"github.com/PhyberApex/mamori/internal/scanner"
 )
 
+// errFailThreshold signals that -fail-on tripped on the scan's own findings,
+// not that the scan malfunctioned. main() checks for it specifically so it
+// can exit non-zero without the "mamori: ..." line a real failure gets — the
+// report already written to out has told the user exactly what's wrong, so
+// repeating that as a generic error would just be noise.
+var errFailThreshold = errors.New("findings at or above the -fail-on threshold")
+
 func main() {
 	if err := run(os.Args[1:], stdinIfPiped(), os.Stdout); err != nil {
 		// -h/-help surfaces as flag.ErrHelp after the FlagSet has already
@@ -20,7 +27,9 @@ func main() {
 		if errors.Is(err, flag.ErrHelp) {
 			return
 		}
-		fmt.Fprintln(os.Stderr, "mamori:", err)
+		if !errors.Is(err, errFailThreshold) {
+			fmt.Fprintln(os.Stderr, "mamori:", err)
+		}
 		os.Exit(1)
 	}
 }
@@ -46,7 +55,13 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 	}
 	client := &http.Client{Timeout: cfg.Timeout}
 	findings := scanner.Scan(context.Background(), client, scanner.DefaultCheckers(), urls, cfg.Workers)
-	return reporterFor(cfg.Output).Report(findings, out)
+	if err := reporterFor(cfg.Output).Report(findings, out); err != nil {
+		return err
+	}
+	if scanner.AnyFails(findings, cfg.FailOn) {
+		return errFailThreshold
+	}
+	return nil
 }
 
 // reporterFor returns the Reporter interface, not a concrete type, so run
