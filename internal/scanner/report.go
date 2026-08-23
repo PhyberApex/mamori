@@ -38,8 +38,8 @@ func colorize(color, s string) string {
 	return color + s + ansiReset
 }
 
-// statusTag picks the color from severity for missing headers so a missing
-// high-severity header reads as urgent (red) while lower severities stay a
+// statusTag picks the color from severity for missing/weak headers so a
+// high-severity finding reads as urgent (red) while lower severities stay a
 // warning yellow.
 func statusTag(f Finding) string {
 	switch f.Status {
@@ -48,10 +48,14 @@ func statusTag(f Finding) string {
 	case StatusError:
 		return colorize(ansiRed, "ERROR")
 	}
+	color := ansiYellow
 	if f.Severity == SeverityHigh {
-		return colorize(ansiRed, "MISSING")
+		color = ansiRed
 	}
-	return colorize(ansiYellow, "MISSING")
+	if f.Status == StatusWeak {
+		return colorize(color, "WEAK")
+	}
+	return colorize(color, "MISSING")
 }
 
 type TerminalReporter struct{}
@@ -76,6 +80,9 @@ func (TerminalReporter) Report(findings []Finding, w io.Writer) error {
 				line = fmt.Sprintf("  [%s] %s", statusTag(f), f.Message)
 			} else {
 				line = fmt.Sprintf("  [%s] %s (%s)", statusTag(f), f.Header, f.Severity)
+				if f.Status == StatusWeak && f.Message != "" {
+					line += ": " + f.Message
+				}
 				if f.Status != StatusPass && f.Reference != "" {
 					line += " → " + f.Reference
 				}

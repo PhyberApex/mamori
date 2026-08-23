@@ -12,12 +12,13 @@ func TestCheckersIdentity(t *testing.T) {
 		checker      scanner.Checker
 		wantHeader   string
 		wantSeverity scanner.Severity
+		validValue   string
 	}{
-		{scanner.HSTSChecker{}, "Strict-Transport-Security", scanner.SeverityHigh},
-		{scanner.ContentTypeOptionsChecker{}, "X-Content-Type-Options", scanner.SeverityMedium},
-		{scanner.FrameOptionsChecker{}, "X-Frame-Options", scanner.SeverityMedium},
-		{scanner.CSPChecker{}, "Content-Security-Policy", scanner.SeverityHigh},
-		{scanner.ReferrerPolicyChecker{}, "Referrer-Policy", scanner.SeverityLow},
+		{scanner.HSTSChecker{}, "Strict-Transport-Security", scanner.SeverityHigh, "max-age=63072000; includeSubDomains"},
+		{scanner.ContentTypeOptionsChecker{}, "X-Content-Type-Options", scanner.SeverityMedium, "nosniff"},
+		{scanner.FrameOptionsChecker{}, "X-Frame-Options", scanner.SeverityMedium, "DENY"},
+		{scanner.CSPChecker{}, "Content-Security-Policy", scanner.SeverityHigh, "default-src 'self'"},
+		{scanner.ReferrerPolicyChecker{}, "Referrer-Policy", scanner.SeverityLow, "strict-origin-when-cross-origin"},
 	}
 
 	for _, tt := range tests {
@@ -39,14 +40,95 @@ func TestCheckersIdentity(t *testing.T) {
 				t.Error("Reference is empty, want a docs URL")
 			}
 
-			present := tt.checker.Check(http.Header{tt.wantHeader: {"some-value"}})
+			present := tt.checker.Check(http.Header{tt.wantHeader: {tt.validValue}})
 			if present[0].Status != scanner.StatusPass {
-				t.Errorf("Status with header set = %q, want %q", present[0].Status, scanner.StatusPass)
+				t.Errorf("Status with valid value %q = %q, want %q", tt.validValue, present[0].Status, scanner.StatusPass)
 			}
 
 			empty := tt.checker.Check(http.Header{tt.wantHeader: {""}})
 			if empty[0].Status != scanner.StatusMissing {
 				t.Errorf("Status with empty header value = %q, want %q", empty[0].Status, scanner.StatusMissing)
+			}
+		})
+	}
+}
+
+func TestHSTSWeakValues(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"zero max-age", "max-age=0"},
+		{"negative max-age", "max-age=-1"},
+		{"unparseable max-age", "max-age=notanumber"},
+		{"missing max-age directive", "includeSubDomains"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			findings := scanner.HSTSChecker{}.Check(http.Header{"Strict-Transport-Security": {tt.value}})
+			if findings[0].Status != scanner.StatusWeak {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+			}
+			if findings[0].Message == "" {
+				t.Error("Message is empty, want an explanation")
+			}
+		})
+	}
+}
+
+func TestHSTSAcceptsValidMaxAge(t *testing.T) {
+	tests := []string{
+		"max-age=63072000",
+		"max-age=63072000; includeSubDomains",
+		"includeSubDomains; max-age=63072000",
+	}
+	for _, value := range tests {
+		t.Run(value, func(t *testing.T) {
+			findings := scanner.HSTSChecker{}.Check(http.Header{"Strict-Transport-Security": {value}})
+			if findings[0].Status != scanner.StatusPass {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
+			}
+		})
+	}
+}
+
+func TestFrameOptionsWeakValues(t *testing.T) {
+	tests := []string{"ALLOW-FROM https://example.com", "allowall", "garbage"}
+	for _, value := range tests {
+		t.Run(value, func(t *testing.T) {
+			findings := scanner.FrameOptionsChecker{}.Check(http.Header{"X-Frame-Options": {value}})
+			if findings[0].Status != scanner.StatusWeak {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+			}
+			if findings[0].Message == "" {
+				t.Error("Message is empty, want an explanation")
+			}
+		})
+	}
+}
+
+func TestFrameOptionsAcceptsCaseInsensitiveValidValues(t *testing.T) {
+	tests := []string{"deny", "DENY", "sameorigin", "SAMEORIGIN"}
+	for _, value := range tests {
+		t.Run(value, func(t *testing.T) {
+			findings := scanner.FrameOptionsChecker{}.Check(http.Header{"X-Frame-Options": {value}})
+			if findings[0].Status != scanner.StatusPass {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
+			}
+		})
+	}
+}
+
+func TestReferrerPolicyWeakValues(t *testing.T) {
+	tests := []string{"unsafe-url", "UNSAFE-URL", "Unsafe-Url"}
+	for _, value := range tests {
+		t.Run(value, func(t *testing.T) {
+			findings := scanner.ReferrerPolicyChecker{}.Check(http.Header{"Referrer-Policy": {value}})
+			if findings[0].Status != scanner.StatusWeak {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+			}
+			if findings[0].Message == "" {
+				t.Error("Message is empty, want an explanation")
 			}
 		})
 	}

@@ -27,7 +27,7 @@ X-Frame-Options: SAMEORIGIN
 
 ## What mamori checks
 
-Presence of the header. A missing header is reported as a medium-severity finding.
+Presence of the header, and that its value is one of the two the spec defines. A missing header is reported as a medium-severity finding. A present header with any value other than `DENY`/`SAMEORIGIN` (case-insensitive) — including `ALLOW-FROM`, which modern browsers ignore — is reported as `WEAK`, since it provides no clickjacking protection.
 
 ## Further reading
 
