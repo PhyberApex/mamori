@@ -185,40 +185,40 @@ func (CookieChecker) Check(headers http.Header) []Finding {
 	return findings
 }
 
+// cookieAttributes lists the three flags CookieChecker judges, in the order
+// findings are reported. Go only sets SameSite to Lax/Strict when the
+// attribute is explicitly present with a recognized value; a missing
+// attribute leaves the zero value, and an unrecognized value maps to
+// SameSiteDefaultMode, so anything other than Lax/Strict is either absent
+// or explicit None.
+var cookieAttributes = []struct {
+	name     string
+	severity Severity
+	weak     func(cookie *http.Cookie) bool
+	message  string
+}{
+	{"Secure", SeverityHigh, func(c *http.Cookie) bool { return !c.Secure }, "lacks the Secure flag and can be sent over plain HTTP"},
+	{"HttpOnly", SeverityMedium, func(c *http.Cookie) bool { return !c.HttpOnly }, "lacks the HttpOnly flag and can be read by client-side JavaScript"},
+	{"SameSite", SeverityMedium, func(c *http.Cookie) bool {
+		return c.SameSite != http.SameSiteLaxMode && c.SameSite != http.SameSiteStrictMode
+	}, "is missing SameSite=Strict/Lax and will be sent on cross-site requests"},
+}
+
 // cookieFindings reports each weak attribute of a single cookie
 // independently, mirroring how the other checkers emit one Finding per
 // header rather than bundling unrelated weaknesses into one message.
 func cookieFindings(cookie *http.Cookie) []Finding {
 	var findings []Finding
-	if !cookie.Secure {
+	for _, attr := range cookieAttributes {
+		if !attr.weak(cookie) {
+			continue
+		}
 		findings = append(findings, Finding{
-			Header:    fmt.Sprintf("Set-Cookie: %s (Secure)", cookie.Name),
+			Header:    fmt.Sprintf("Set-Cookie: %s (%s)", cookie.Name, attr.name),
 			Status:    StatusWeak,
-			Severity:  SeverityHigh,
+			Severity:  attr.severity,
 			Reference: cookieReference,
-			Message:   fmt.Sprintf("cookie %q lacks the Secure flag and can be sent over plain HTTP", cookie.Name),
-		})
-	}
-	if !cookie.HttpOnly {
-		findings = append(findings, Finding{
-			Header:    fmt.Sprintf("Set-Cookie: %s (HttpOnly)", cookie.Name),
-			Status:    StatusWeak,
-			Severity:  SeverityMedium,
-			Reference: cookieReference,
-			Message:   fmt.Sprintf("cookie %q lacks the HttpOnly flag and can be read by client-side JavaScript", cookie.Name),
-		})
-	}
-	// Go only sets SameSite to Lax/Strict when the attribute is explicitly
-	// present with a recognized value; a missing attribute leaves the zero
-	// value, and an unrecognized value maps to SameSiteDefaultMode, so
-	// anything other than Lax/Strict is either absent or explicit None.
-	if cookie.SameSite != http.SameSiteLaxMode && cookie.SameSite != http.SameSiteStrictMode {
-		findings = append(findings, Finding{
-			Header:    fmt.Sprintf("Set-Cookie: %s (SameSite)", cookie.Name),
-			Status:    StatusWeak,
-			Severity:  SeverityMedium,
-			Reference: cookieReference,
-			Message:   fmt.Sprintf("cookie %q is missing SameSite=Strict/Lax and will be sent on cross-site requests", cookie.Name),
+			Message:   fmt.Sprintf("cookie %q %s", cookie.Name, attr.message),
 		})
 	}
 	return findings
