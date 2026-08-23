@@ -2,6 +2,7 @@ package scanner_test
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/PhyberApex/mamori/internal/scanner"
@@ -195,6 +196,134 @@ func TestReferrerPolicyWeakFallbackList(t *testing.T) {
 				t.Error("Message is empty, want an explanation")
 			}
 		})
+	}
+}
+
+func TestCookieCheckerNoCookiesProducesNoFindings(t *testing.T) {
+	findings := scanner.CookieChecker{}.Check(http.Header{})
+	if len(findings) != 0 {
+		t.Errorf("Check() on headers with no Set-Cookie returned %d findings, want 0", len(findings))
+	}
+}
+
+func TestCookieCheckerFullyLockedDownCookieProducesNoFindings(t *testing.T) {
+	findings := scanner.CookieChecker{}.Check(http.Header{
+		"Set-Cookie": {"session_id=abc123; Secure; HttpOnly; SameSite=Strict"},
+	})
+	if len(findings) != 0 {
+		t.Errorf("Check() on a fully-locked-down cookie returned %d findings, want 0: %+v", len(findings), findings)
+	}
+}
+
+func TestCookieCheckerSameSiteLaxIsAccepted(t *testing.T) {
+	findings := scanner.CookieChecker{}.Check(http.Header{
+		"Set-Cookie": {"session_id=abc123; Secure; HttpOnly; SameSite=Lax"},
+	})
+	if len(findings) != 0 {
+		t.Errorf("Check() with SameSite=Lax returned %d findings, want 0: %+v", len(findings), findings)
+	}
+}
+
+func TestCookieCheckerMissingSecure(t *testing.T) {
+	findings := scanner.CookieChecker{}.Check(http.Header{
+		"Set-Cookie": {"session_id=abc123; HttpOnly; SameSite=Strict"},
+	})
+	if len(findings) != 1 {
+		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
+	}
+	if findings[0].Status != scanner.StatusWeak {
+		t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+	}
+	if findings[0].Severity != scanner.SeverityHigh {
+		t.Errorf("Severity = %q, want %q", findings[0].Severity, scanner.SeverityHigh)
+	}
+	if findings[0].Header != "Set-Cookie: session_id (Secure)" {
+		t.Errorf("Header = %q, want %q", findings[0].Header, "Set-Cookie: session_id (Secure)")
+	}
+	if findings[0].Message == "" {
+		t.Error("Message is empty, want an explanation")
+	}
+}
+
+func TestCookieCheckerMissingHttpOnly(t *testing.T) {
+	findings := scanner.CookieChecker{}.Check(http.Header{
+		"Set-Cookie": {"session_id=abc123; Secure; SameSite=Strict"},
+	})
+	if len(findings) != 1 {
+		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
+	}
+	if findings[0].Status != scanner.StatusWeak {
+		t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+	}
+	if findings[0].Severity != scanner.SeverityMedium {
+		t.Errorf("Severity = %q, want %q", findings[0].Severity, scanner.SeverityMedium)
+	}
+	if findings[0].Header != "Set-Cookie: session_id (HttpOnly)" {
+		t.Errorf("Header = %q, want %q", findings[0].Header, "Set-Cookie: session_id (HttpOnly)")
+	}
+	if findings[0].Message == "" {
+		t.Error("Message is empty, want an explanation")
+	}
+}
+
+func TestCookieCheckerWeakSameSite(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"missing SameSite", "session_id=abc123; Secure; HttpOnly"},
+		{"SameSite=None", "session_id=abc123; Secure; HttpOnly; SameSite=None"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			findings := scanner.CookieChecker{}.Check(http.Header{"Set-Cookie": {tt.value}})
+			if len(findings) != 1 {
+				t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
+			}
+			if findings[0].Status != scanner.StatusWeak {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+			}
+			if findings[0].Severity != scanner.SeverityMedium {
+				t.Errorf("Severity = %q, want %q", findings[0].Severity, scanner.SeverityMedium)
+			}
+			if findings[0].Header != "Set-Cookie: session_id (SameSite)" {
+				t.Errorf("Header = %q, want %q", findings[0].Header, "Set-Cookie: session_id (SameSite)")
+			}
+			if findings[0].Message == "" {
+				t.Error("Message is empty, want an explanation")
+			}
+		})
+	}
+}
+
+func TestCookieCheckerCompletelyInsecureCookieProducesThreeFindings(t *testing.T) {
+	findings := scanner.CookieChecker{}.Check(http.Header{
+		"Set-Cookie": {"session_id=abc123"},
+	})
+	if len(findings) != 3 {
+		t.Fatalf("Check() returned %d findings, want 3: %+v", len(findings), findings)
+	}
+	for _, f := range findings {
+		if f.Status != scanner.StatusWeak {
+			t.Errorf("Status = %q, want %q", f.Status, scanner.StatusWeak)
+		}
+	}
+}
+
+func TestCookieCheckerEvaluatesMultipleCookiesIndependently(t *testing.T) {
+	findings := scanner.CookieChecker{}.Check(http.Header{
+		"Set-Cookie": {
+			"session_id=abc123; Secure; HttpOnly; SameSite=Strict",
+			"tracking_id=xyz789",
+		},
+	})
+	if len(findings) != 3 {
+		t.Fatalf("Check() returned %d findings, want 3 (only from tracking_id): %+v", len(findings), findings)
+	}
+	for _, f := range findings {
+		if !strings.Contains(f.Header, "tracking_id") {
+			t.Errorf("Header = %q, want it to reference tracking_id only", f.Header)
+		}
 	}
 }
 
