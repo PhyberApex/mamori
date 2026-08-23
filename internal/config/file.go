@@ -3,8 +3,8 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
-	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -39,25 +39,22 @@ func resolveConfigPath(args []string, getenv func(string) string) (path string, 
 	return autoDiscoverPath, false
 }
 
-// prescanConfigFlag looks for -config/--config ahead of the full flag.Parse
-// call in Resolve: the config file has to be loaded before it can seed the
-// flag defaults that establish the default → config → env → flag precedence.
-// A malformed -config usage (e.g. a missing value) is left for flag.Parse to
-// reject with its usual error rather than being handled here.
+// prescanConfigFlag looks for -config ahead of the full flag.Parse call in
+// Resolve: the config file has to be loaded before it can seed the flag
+// defaults that establish the default → config → env → flag precedence. It
+// parses with the same registerFlags definitions the real parse uses, so
+// this prescan agrees with flag.Parse on exactly where flag parsing stops
+// (e.g. at the first positional target argument) and on last-flag-wins for
+// a repeated -config, rather than a hand-rolled scan that could disagree
+// with flag.Parse about which -config occurrence, if any, applies. A
+// malformed usage is left for the real Parse call to reject with its usual
+// error rather than being handled here.
 func prescanConfigFlag(args []string) string {
-	for i, arg := range args {
-		switch {
-		case arg == "-config" || arg == "--config":
-			if i+1 < len(args) {
-				return args[i+1]
-			}
-		case strings.HasPrefix(arg, "-config="):
-			return strings.TrimPrefix(arg, "-config=")
-		case strings.HasPrefix(arg, "--config="):
-			return strings.TrimPrefix(arg, "--config=")
-		}
-	}
-	return ""
+	var cfg Config
+	fs, configPath := registerFlags(&cfg)
+	fs.SetOutput(io.Discard)
+	_ = fs.Parse(args)
+	return *configPath
 }
 
 func loadConfigFile(path string) (fileConfig, error) {
@@ -78,14 +75,14 @@ func loadConfigFile(path string) (fileConfig, error) {
 // fails the same way a bad env var or flag would.
 func applyFileConfig(cfg *Config, fc fileConfig, path string) error {
 	if fc.Workers != nil {
-		if *fc.Workers < 1 {
-			return fmt.Errorf("%s: workers: %d is not a positive integer", path, *fc.Workers)
+		if err := validateWorkers(*fc.Workers); err != nil {
+			return fmt.Errorf("%s: workers: %w", path, err)
 		}
 		cfg.Workers = *fc.Workers
 	}
 	if fc.Timeout != nil {
 		d, err := time.ParseDuration(*fc.Timeout)
-		if err != nil || d <= 0 {
+		if err != nil || validateTimeout(d) != nil {
 			return fmt.Errorf("%s: timeout: %q is not a positive duration (e.g. 5s)", path, *fc.Timeout)
 		}
 		cfg.Timeout = d

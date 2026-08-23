@@ -121,6 +121,42 @@ targets:
 	}
 }
 
+func TestResolveConfigFlagLastOccurrenceWins(t *testing.T) {
+	first := writeConfigFile(t, t.TempDir(), "first.yaml", `workers: 3`)
+	second := writeConfigFile(t, t.TempDir(), "second.yaml", `workers: 9`)
+
+	cfg, _, err := config.Resolve([]string{"-config", first, "-config", second}, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.Workers != 9 {
+		t.Errorf("Workers = %d, want 9 from the second -config (last occurrence wins, matching flag.Parse's normal repeated-flag semantics)", cfg.Workers)
+	}
+}
+
+func TestResolveConfigFlagAfterPositionalArgIsNotRecognized(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	path := writeConfigFile(t, dir, "should-not-load.yaml", `workers: 99`)
+
+	cfg, targets, err := config.Resolve([]string{"https://example.com", "-config", path}, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.Workers != 10 {
+		t.Errorf("Workers = %d, want default 10: flag.Parse stops at the first positional argument, so -config after https://example.com is never reached and must not be treated as an explicit -config selection", cfg.Workers)
+	}
+	found := false
+	for _, target := range targets {
+		if target == "https://example.com" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("targets = %v, want https://example.com among them", targets)
+	}
+}
+
 func TestResolveMissingExplicitConfigFlagErrors(t *testing.T) {
 	if _, _, err := config.Resolve([]string{"-config", filepath.Join(t.TempDir(), "missing.yaml")}, noEnv); err == nil {
 		t.Error("Resolve() with a missing -config path returned nil error, want error")

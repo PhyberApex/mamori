@@ -114,6 +114,11 @@ file merge additively with any targets passed as arguments or piped via
 stdin. Settings follow the same precedence as everything else: `default →
 config file → environment variable → CLI flag`.
 
+Because auto-discovery is silent, running mamori in an unfamiliar directory
+that contains a `.mamori.yaml` will pick up its settings and targets without
+being asked — review a directory's `.mamori.yaml` before scanning there if
+you don't already trust its contents.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
