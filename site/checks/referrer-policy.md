@@ -23,7 +23,7 @@ This is the browser default since 2021 and a safe choice for most APIs. More res
 
 ## What mamori checks
 
-Presence of the header. A missing header is reported as a low-severity finding.
+Presence of the header, and that it isn't set to `unsafe-url`. A missing header is reported as a low-severity finding. A present header set to `unsafe-url` is reported as `WEAK` — it explicitly sends the full URL, including query strings, to third parties on every cross-origin request, the opposite of what this header is for.
 
 ## Further reading
 

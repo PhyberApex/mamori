@@ -62,6 +62,36 @@ func TestTerminalReporterGroupsFindingsByURL(t *testing.T) {
 	}
 }
 
+func TestTerminalReporterShowsWeakMessage(t *testing.T) {
+	findings := []scanner.Finding{
+		{
+			URL:       "https://a.example",
+			Header:    "Strict-Transport-Security",
+			Status:    scanner.StatusWeak,
+			Severity:  scanner.SeverityHigh,
+			Message:   "max-age=0 disables HSTS",
+			Reference: "https://owasp.example/hsts",
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.TerminalReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{"WEAK", "Strict-Transport-Security", "max-age=0 disables HSTS", "https://owasp.example/hsts"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\noutput:\n%s", want, out)
+		}
+	}
+
+	//nolint:gosec // G101 false positive: ANSI color assertion, not credentials
+	if !strings.Contains(out, "\x1b[31mWEAK\x1b[0m") {
+		t.Errorf("WEAK tag for high-severity finding is not red\noutput:\n%q", out)
+	}
+}
+
 func TestTerminalReporterShowsErrorMessage(t *testing.T) {
 	findings := []scanner.Finding{
 		{
@@ -151,6 +181,14 @@ func TestJSONReporterEmitsOneFindingPerLine(t *testing.T) {
 			Status:  scanner.StatusError,
 			Message: "context deadline exceeded",
 		},
+		{
+			URL:       "https://a.example",
+			Header:    "Referrer-Policy",
+			Status:    scanner.StatusWeak,
+			Severity:  scanner.SeverityLow,
+			Message:   "unsafe-url leaks the full URL, including query strings, to third parties on cross-origin requests",
+			Reference: "https://owasp.example/referrer-policy",
+		},
 	}
 
 	var buf bytes.Buffer
@@ -159,8 +197,8 @@ func TestJSONReporterEmitsOneFindingPerLine(t *testing.T) {
 	}
 
 	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("got %d lines, want one per finding (2)\noutput:\n%s", len(lines), buf.String())
+	if len(lines) != 3 {
+		t.Fatalf("got %d lines, want one per finding (3)\noutput:\n%s", len(lines), buf.String())
 	}
 
 	var first map[string]any
@@ -188,5 +226,16 @@ func TestJSONReporterEmitsOneFindingPerLine(t *testing.T) {
 	}
 	if second["message"] != "context deadline exceeded" {
 		t.Errorf("error finding message = %v, want the scan error", second["message"])
+	}
+
+	var third map[string]any
+	if err := json.Unmarshal([]byte(lines[2]), &third); err != nil {
+		t.Fatalf("line 3 is not valid JSON: %v\nline: %s", err, lines[2])
+	}
+	if third["status"] != "weak" {
+		t.Errorf("weak finding status = %v, want %q", third["status"], "weak")
+	}
+	if third["message"] != "unsafe-url leaks the full URL, including query strings, to third parties on cross-origin requests" {
+		t.Errorf("weak finding message = %v, want the weakness explanation", third["message"])
 	}
 }

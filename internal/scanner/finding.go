@@ -5,7 +5,12 @@ type Status string
 const (
 	StatusPass    Status = "pass"
 	StatusMissing Status = "missing"
-	StatusError   Status = "error"
+	// StatusWeak marks a header that is present but whose value is a known
+	// no-op, so it doesn't provide the protection the header exists for.
+	// Kept distinct from StatusPass so scans don't silently treat a
+	// self-defeating value (e.g. max-age=0) as a clean bill of health.
+	StatusWeak  Status = "weak"
+	StatusError Status = "error"
 )
 
 type Severity string
