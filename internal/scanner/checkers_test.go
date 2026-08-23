@@ -92,6 +92,27 @@ func TestHSTSAcceptsValidMaxAge(t *testing.T) {
 	}
 }
 
+func TestHSTSFlagsWeakAmongDuplicateHeaders(t *testing.T) {
+	// A misconfigured proxy/CDN can append a second Strict-Transport-Security
+	// header instead of overwriting the origin's. headers.Get would only see
+	// whichever value happens to be first, so the reported status must not
+	// depend on that order.
+	headers := http.Header{"Strict-Transport-Security": {"max-age=63072000", "max-age=0"}}
+	findings := scanner.HSTSChecker{}.Check(headers)
+	if findings[0].Status != scanner.StatusWeak {
+		t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+	}
+	if findings[0].Message == "" {
+		t.Error("Message is empty, want an explanation")
+	}
+
+	reversed := http.Header{"Strict-Transport-Security": {"max-age=0", "max-age=63072000"}}
+	findings = scanner.HSTSChecker{}.Check(reversed)
+	if findings[0].Status != scanner.StatusWeak {
+		t.Errorf("Status = %q, want %q (order should not matter)", findings[0].Status, scanner.StatusWeak)
+	}
+}
+
 func TestFrameOptionsWeakValues(t *testing.T) {
 	tests := []string{"ALLOW-FROM https://example.com", "allowall", "garbage"}
 	for _, value := range tests {

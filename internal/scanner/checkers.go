@@ -148,14 +148,23 @@ func checkPresence(headers http.Header, name string, severity Severity, referenc
 // present value can still be a functional no-op. Only a Finding that's
 // already StatusPass gets validated — missing/empty values stay StatusMissing,
 // since "provides no protection" and "isn't set" are different findings.
+//
+// A misconfigured proxy or CDN can cause a header to appear more than once
+// in the same response; headers.Get only ever sees the first of those. We
+// validate every occurrence and flag the finding as soon as any one of them
+// is weak, rather than letting send order decide whether the scan reports
+// pass or weak.
 func checkValue(headers http.Header, name string, severity Severity, reference string, validate func(value string) (weak bool, message string)) []Finding {
 	findings := checkPresence(headers, name, severity, reference)
 	if findings[0].Status != StatusPass {
 		return findings
 	}
-	if weak, message := validate(strings.TrimSpace(headers.Get(name))); weak {
-		findings[0].Status = StatusWeak
-		findings[0].Message = message
+	for _, value := range headers.Values(name) {
+		if weak, message := validate(strings.TrimSpace(value)); weak {
+			findings[0].Status = StatusWeak
+			findings[0].Message = message
+			break
+		}
 	}
 	return findings
 }
