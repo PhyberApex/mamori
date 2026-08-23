@@ -1,0 +1,205 @@
+package config_test
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/PhyberApex/mamori/internal/config"
+)
+
+func writeConfigFile(t *testing.T, dir, name, contents string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatalf("writing config file: %v", err)
+	}
+	return path
+}
+
+func TestResolveConfigFlagLoadsWorkersTimeoutOutputAndTargets(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `
+workers: 4
+timeout: 3s
+output: json
+targets:
+  - https://from-config.example
+`)
+
+	cfg, targets, err := config.Resolve([]string{"-config", path}, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.Workers != 4 {
+		t.Errorf("Workers = %d, want 4 from config file", cfg.Workers)
+	}
+	if cfg.Timeout != 3*time.Second {
+		t.Errorf("Timeout = %v, want 3s from config file", cfg.Timeout)
+	}
+	if cfg.Output != config.OutputJSON {
+		t.Errorf("Output = %q, want %q from config file", cfg.Output, config.OutputJSON)
+	}
+	if len(targets) != 1 || targets[0] != "https://from-config.example" {
+		t.Errorf("targets = %v, want [https://from-config.example]", targets)
+	}
+}
+
+func TestResolveConfigEnvVarSelectsFile(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `workers: 7`)
+
+	cfg, _, err := config.Resolve(nil, envWith(map[string]string{"MAMORI_CONFIG": path}))
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.Workers != 7 {
+		t.Errorf("Workers = %d, want 7 from MAMORI_CONFIG file", cfg.Workers)
+	}
+}
+
+func TestResolveConfigFlagOverridesConfigEnvVar(t *testing.T) {
+	flagPath := writeConfigFile(t, t.TempDir(), "flag.yaml", `workers: 5`)
+	envPath := writeConfigFile(t, t.TempDir(), "env.yaml", `workers: 9`)
+
+	cfg, _, err := config.Resolve(
+		[]string{"-config", flagPath},
+		envWith(map[string]string{"MAMORI_CONFIG": envPath}),
+	)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.Workers != 5 {
+		t.Errorf("Workers = %d, want 5 from -config flag overriding MAMORI_CONFIG", cfg.Workers)
+	}
+}
+
+func TestResolveEnvVarOverridesConfigFile(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `workers: 3`)
+
+	cfg, _, err := config.Resolve(
+		[]string{"-config", path},
+		envWith(map[string]string{"MAMORI_WORKERS": "8"}),
+	)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.Workers != 8 {
+		t.Errorf("Workers = %d, want 8 from MAMORI_WORKERS overriding config file", cfg.Workers)
+	}
+}
+
+func TestResolveFlagOverridesConfigFile(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `workers: 3`)
+
+	cfg, _, err := config.Resolve([]string{"-config", path, "-workers", "6"}, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.Workers != 6 {
+		t.Errorf("Workers = %d, want 6 from -workers flag overriding config file", cfg.Workers)
+	}
+}
+
+func TestResolveConfigFileTargetsMergeAdditivelyWithArgs(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `
+targets:
+  - https://from-config.example
+`)
+
+	_, targets, err := config.Resolve([]string{"-config", path, "https://from-args.example"}, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	want := map[string]bool{"https://from-config.example": true, "https://from-args.example": true}
+	if len(targets) != len(want) {
+		t.Fatalf("targets = %v, want two entries", targets)
+	}
+	for _, target := range targets {
+		if !want[target] {
+			t.Errorf("unexpected target %q", target)
+		}
+	}
+}
+
+func TestResolveMissingExplicitConfigFlagErrors(t *testing.T) {
+	if _, _, err := config.Resolve([]string{"-config", filepath.Join(t.TempDir(), "missing.yaml")}, noEnv); err == nil {
+		t.Error("Resolve() with a missing -config path returned nil error, want error")
+	}
+}
+
+func TestResolveMissingExplicitConfigEnvVarErrors(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing.yaml")
+	if _, _, err := config.Resolve(nil, envWith(map[string]string{"MAMORI_CONFIG": path})); err == nil {
+		t.Error("Resolve() with a missing MAMORI_CONFIG path returned nil error, want error")
+	}
+}
+
+func TestResolveConfigFileRejectsNonPositiveWorkers(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `workers: 0`)
+	if _, _, err := config.Resolve([]string{"-config", path}, noEnv); err == nil {
+		t.Error("Resolve() with workers: 0 in config file returned nil error, want error")
+	}
+}
+
+func TestResolveConfigFileRejectsNonPositiveTimeout(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `timeout: -1s`)
+	if _, _, err := config.Resolve([]string{"-config", path}, noEnv); err == nil {
+		t.Error("Resolve() with a negative timeout in config file returned nil error, want error")
+	}
+}
+
+func TestResolveConfigFileRejectsUnknownOutput(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `output: xml`)
+	if _, _, err := config.Resolve([]string{"-config", path}, noEnv); err == nil {
+		t.Error("Resolve() with an unknown output format in config file returned nil error, want error")
+	}
+}
+
+func TestResolveConfigFileRejectsInvalidYAML(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", "workers: [this is not an int\n")
+	if _, _, err := config.Resolve([]string{"-config", path}, noEnv); err == nil {
+		t.Error("Resolve() with malformed YAML in config file returned nil error, want error")
+	}
+}
+
+func TestResolveAutoDiscoversDotMamoriYAMLInWorkingDirectory(t *testing.T) {
+	dir := t.TempDir()
+	writeConfigFile(t, dir, ".mamori.yaml", `
+workers: 2
+targets:
+  - https://auto.example
+`)
+	t.Chdir(dir)
+
+	cfg, targets, err := config.Resolve(nil, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.Workers != 2 {
+		t.Errorf("Workers = %d, want 2 from auto-discovered .mamori.yaml", cfg.Workers)
+	}
+	if len(targets) != 1 || targets[0] != "https://auto.example" {
+		t.Errorf("targets = %v, want [https://auto.example]", targets)
+	}
+}
+
+func TestResolveWithNoConfigFilePresentIsUnchanged(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	cfg, rest, err := config.Resolve([]string{"https://a.example"}, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.Workers != 10 {
+		t.Errorf("Workers = %d, want default 10 with no config file present", cfg.Workers)
+	}
+	if cfg.Timeout != 10*time.Second {
+		t.Errorf("Timeout = %v, want default 10s with no config file present", cfg.Timeout)
+	}
+	if cfg.Output != config.OutputTerminal {
+		t.Errorf("Output = %q, want default %q with no config file present", cfg.Output, config.OutputTerminal)
+	}
+	if len(rest) != 1 || rest[0] != "https://a.example" {
+		t.Errorf("targets = %v, want [https://a.example]", rest)
+	}
+}

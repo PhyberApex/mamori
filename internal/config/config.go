@@ -1,5 +1,5 @@
 // Package config resolves runtime settings once at startup with the
-// precedence: hardcoded default → environment variable → CLI flag.
+// precedence: hardcoded default → config file → environment variable → CLI flag.
 package config
 
 import (
@@ -68,6 +68,11 @@ func (o *Output) Set(v string) error {
 func Resolve(args []string, getenv func(string) string) (Config, []string, error) {
 	cfg := Config{Workers: defaultWorkers, Timeout: defaultTimeout, Output: defaultOutput}
 
+	fileTargets, err := loadConfigLayer(&cfg, args, getenv)
+	if err != nil {
+		return Config{}, nil, err
+	}
+
 	if v := getenv("MAMORI_WORKERS"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 1 {
@@ -100,6 +105,11 @@ func Resolve(args []string, getenv func(string) string) (Config, []string, error
 	fs.DurationVar(&cfg.Timeout, "timeout", cfg.Timeout, "HTTP request timeout (e.g. 5s)")
 	fs.Var(&cfg.Output, "o", "output format: terminal or json")
 	fs.Var(&cfg.FailOn, "fail-on", "exit non-zero on findings at or above this severity: low, medium, high, or none")
+	// configPath is resolved and applied above, before the flag defaults are
+	// established; it is registered here purely so -config is recognized by
+	// Parse and documented in -h, not read back after Parse.
+	var configPath string
+	fs.StringVar(&configPath, "config", "", "path to YAML config file (env MAMORI_CONFIG; default: .mamori.yaml in the working directory if present)")
 	if err := fs.Parse(args); err != nil {
 		return Config{}, nil, err
 	}
@@ -109,5 +119,6 @@ func Resolve(args []string, getenv func(string) string) (Config, []string, error
 	if cfg.Timeout <= 0 {
 		return Config{}, nil, fmt.Errorf("-timeout: %v is not a positive duration", cfg.Timeout)
 	}
-	return cfg, fs.Args(), nil
+	targets := append(append([]string{}, fileTargets...), fs.Args()...)
+	return cfg, targets, nil
 }

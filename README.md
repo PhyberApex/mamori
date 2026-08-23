@@ -67,6 +67,7 @@ Full reference for every check mamori performs is available at
 | `-timeout` | `10s` | HTTP request timeout (e.g. `5s`) |
 | `-o` | `terminal` | output format: `terminal` or `json` |
 | `-fail-on` | `none` | exit non-zero on findings at or above this severity: `low`, `medium`, `high`, or `none` |
+| `-config` | *(none)* | path to a YAML config file |
 
 `-o json` emits newline-delimited JSON, one finding per line.
 
@@ -90,6 +91,28 @@ precedence.
 | `MAMORI_TIMEOUT` | `-timeout` |
 | `MAMORI_OUTPUT` | `-o` |
 | `MAMORI_FAIL_ON` | `-fail-on` |
+| `MAMORI_CONFIG` | `-config` |
+
+### Config file
+
+Instead of passing flags and targets on every run, mamori can read them from
+a YAML config file:
+
+```yaml
+workers: 5
+timeout: 5s
+output: json
+targets:
+  - https://example.com
+  - https://example.org
+```
+
+Select a file explicitly with `-config <path>` or `MAMORI_CONFIG=<path>`. If
+neither is set, mamori looks for `.mamori.yaml` in the current directory and
+uses it if present — otherwise behavior is unchanged. Targets from the config
+file merge additively with any targets passed as arguments or piped via
+stdin. Settings follow the same precedence as everything else: `default →
+config file → environment variable → CLI flag`.
 
 ## License
 
