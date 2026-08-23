@@ -67,7 +67,10 @@ func (o *Output) Set(v string) error {
 // is validated by the one place that already knows what "known format"
 // means instead of a second string comparison growing elsewhere.
 func (o *Output) UnmarshalYAML(value *yaml.Node) error {
-	return o.Set(value.Value)
+	if err := o.Set(value.Value); err != nil {
+		return fmt.Errorf("output: %w", err)
+	}
+	return nil
 }
 
 // Resolve takes getenv as a function value instead of calling os.Getenv
