@@ -66,12 +66,23 @@ func hstsWeakness(value string) (weak bool, message string) {
 type ContentTypeOptionsChecker struct{}
 
 func (ContentTypeOptionsChecker) Check(headers http.Header) []Finding {
-	return checkPresence(
+	return checkValue(
 		headers,
 		"X-Content-Type-Options",
 		SeverityMedium,
 		"https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html#x-content-type-options",
+		contentTypeOptionsWeakness,
 	)
+}
+
+// contentTypeOptionsWeakness flags any value other than nosniff: it's the
+// only value this header defines, so anything else is not recognized by
+// browsers and disables MIME-sniffing protection just like a missing header.
+func contentTypeOptionsWeakness(value string) (weak bool, message string) {
+	if strings.EqualFold(strings.TrimSpace(value), "nosniff") {
+		return false, ""
+	}
+	return true, fmt.Sprintf("%q is not nosniff and has no effect", value)
 }
 
 type FrameOptionsChecker struct{}

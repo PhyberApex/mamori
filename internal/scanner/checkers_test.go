@@ -123,6 +123,7 @@ func TestCheckValueIgnoresBlankDuplicateOccurrence(t *testing.T) {
 		headers http.Header
 	}{
 		{"HSTS", scanner.HSTSChecker{}, http.Header{"Strict-Transport-Security": {"max-age=63072000", ""}}},
+		{"ContentTypeOptions", scanner.ContentTypeOptionsChecker{}, http.Header{"X-Content-Type-Options": {"nosniff", ""}}},
 		{"FrameOptions", scanner.FrameOptionsChecker{}, http.Header{"X-Frame-Options": {"DENY", ""}}},
 		{"ReferrerPolicy", scanner.ReferrerPolicyChecker{}, http.Header{"Referrer-Policy": {"strict-origin-when-cross-origin", ""}}},
 	}
@@ -131,6 +132,33 @@ func TestCheckValueIgnoresBlankDuplicateOccurrence(t *testing.T) {
 			findings := tt.checker.Check(tt.headers)
 			if findings[0].Status != scanner.StatusPass {
 				t.Errorf("Status = %q, want %q (blank duplicate should not downgrade a strong value)", findings[0].Status, scanner.StatusPass)
+			}
+		})
+	}
+}
+
+func TestContentTypeOptionsWeakValues(t *testing.T) {
+	tests := []string{"garbage", "sniff"}
+	for _, value := range tests {
+		t.Run(value, func(t *testing.T) {
+			findings := scanner.ContentTypeOptionsChecker{}.Check(http.Header{"X-Content-Type-Options": {value}})
+			if findings[0].Status != scanner.StatusWeak {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+			}
+			if findings[0].Message == "" {
+				t.Error("Message is empty, want an explanation")
+			}
+		})
+	}
+}
+
+func TestContentTypeOptionsAcceptsCaseInsensitiveValidValue(t *testing.T) {
+	tests := []string{"nosniff", "NOSNIFF", "NoSniff"}
+	for _, value := range tests {
+		t.Run(value, func(t *testing.T) {
+			findings := scanner.ContentTypeOptionsChecker{}.Check(http.Header{"X-Content-Type-Options": {value}})
+			if findings[0].Status != scanner.StatusPass {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
 			}
 		})
 	}
