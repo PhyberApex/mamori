@@ -1,5 +1,5 @@
 // Package config resolves runtime settings once at startup with the
-// precedence: hardcoded default → environment variable → CLI flag.
+// precedence: hardcoded default → config file → environment variable → CLI flag.
 package config
 
 import (
@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/PhyberApex/mamori/internal/scanner"
+	"gopkg.in/yaml.v3"
 )
 
 // Output is a named string type so the valid formats live next to the type
@@ -61,6 +62,74 @@ func (o *Output) Set(v string) error {
 	return nil
 }
 
+// UnmarshalYAML lets the config-file loader decode straight into an Output
+// via the same Set used by the flag package, so a config file's output value
+// is validated by the one place that already knows what "known format"
+// means instead of a second string comparison growing elsewhere.
+func (o *Output) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind != yaml.ScalarNode {
+		return fmt.Errorf("output: must be a string, not %s", describeYAMLKind(value.Kind))
+	}
+	if err := o.Set(value.Value); err != nil {
+		return fmt.Errorf("output: %w", err)
+	}
+	return nil
+}
+
+// describeYAMLKind names a yaml.Node's Kind for the UnmarshalYAML error
+// message above, so a wrong-typed output value (e.g. a list) reports what
+// was actually found instead of being mistaken for an empty string.
+func describeYAMLKind(kind yaml.Kind) string {
+	switch kind {
+	case yaml.SequenceNode:
+		return "a list"
+	case yaml.MappingNode:
+		return "a mapping"
+	case yaml.AliasNode:
+		return "an alias"
+	default:
+		return "that value"
+	}
+}
+
+// validateWorkers reports whether n satisfies the "positive integer" rule
+// the config-file, env, and flag layers all enforce for -workers.
+func validateWorkers(n int) error {
+	if n < 1 {
+		return fmt.Errorf("%d is not a positive integer", n)
+	}
+	return nil
+}
+
+// validateTimeout reports whether d satisfies the "positive duration" rule
+// the config-file, env, and flag layers all enforce for -timeout.
+func validateTimeout(d time.Duration) error {
+	if d <= 0 {
+		return fmt.Errorf("%v is not a positive duration", d)
+	}
+	return nil
+}
+
+// registerFlags builds the FlagSet mamori parses args with, wiring each flag
+// straight into cfg. The returned configPath pointer is populated by -config
+// but, in the real parse, resolveConfigPath's prescan has already resolved
+// and applied the config-file layer before this runs (see loadConfigLayer);
+// it is registered here purely so -config is recognized by Parse and
+// documented in -h. The prescan reuses this same registration so its parse
+// of -config agrees with the real parse on exactly where flag parsing stops
+// and on last-flag-wins for a repeated -config, instead of hand-rolling a
+// second, divergent parser.
+func registerFlags(cfg *Config) (*flag.FlagSet, *string) {
+	fs := flag.NewFlagSet("mamori", flag.ContinueOnError)
+	fs.IntVar(&cfg.Workers, "workers", cfg.Workers, "number of concurrent scan workers")
+	fs.DurationVar(&cfg.Timeout, "timeout", cfg.Timeout, "HTTP request timeout (e.g. 5s)")
+	fs.Var(&cfg.Output, "o", "output format: terminal or json")
+	fs.Var(&cfg.FailOn, "fail-on", "exit non-zero on findings at or above this severity: low, medium, high, or none")
+	var configPath string
+	fs.StringVar(&configPath, "config", "", "path to YAML config file (env MAMORI_CONFIG; default: .mamori.yaml in the working directory if present)")
+	return fs, &configPath
+}
+
 // Resolve takes getenv as a function value instead of calling os.Getenv
 // directly, so tests can inject environment values without mutating real
 // process state. The env-resolved values are used as the flag defaults,
@@ -68,16 +137,21 @@ func (o *Output) Set(v string) error {
 func Resolve(args []string, getenv func(string) string) (Config, []string, error) {
 	cfg := Config{Workers: defaultWorkers, Timeout: defaultTimeout, Output: defaultOutput}
 
+	fileTargets, err := loadConfigLayer(&cfg, args, getenv)
+	if err != nil {
+		return Config{}, nil, err
+	}
+
 	if v := getenv("MAMORI_WORKERS"); v != "" {
 		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 {
+		if err != nil || validateWorkers(n) != nil {
 			return Config{}, nil, fmt.Errorf("MAMORI_WORKERS: %q is not a positive integer", v)
 		}
 		cfg.Workers = n
 	}
 	if v := getenv("MAMORI_TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)
-		if err != nil || d <= 0 {
+		if err != nil || validateTimeout(d) != nil {
 			return Config{}, nil, fmt.Errorf("MAMORI_TIMEOUT: %q is not a positive duration (e.g. 5s)", v)
 		}
 		cfg.Timeout = d
@@ -95,19 +169,16 @@ func Resolve(args []string, getenv func(string) string) (Config, []string, error
 		}
 	}
 
-	fs := flag.NewFlagSet("mamori", flag.ContinueOnError)
-	fs.IntVar(&cfg.Workers, "workers", cfg.Workers, "number of concurrent scan workers")
-	fs.DurationVar(&cfg.Timeout, "timeout", cfg.Timeout, "HTTP request timeout (e.g. 5s)")
-	fs.Var(&cfg.Output, "o", "output format: terminal or json")
-	fs.Var(&cfg.FailOn, "fail-on", "exit non-zero on findings at or above this severity: low, medium, high, or none")
+	fs, _ := registerFlags(&cfg)
 	if err := fs.Parse(args); err != nil {
 		return Config{}, nil, err
 	}
-	if cfg.Workers < 1 {
-		return Config{}, nil, fmt.Errorf("-workers: %d is not a positive integer", cfg.Workers)
+	if err := validateWorkers(cfg.Workers); err != nil {
+		return Config{}, nil, fmt.Errorf("-workers: %w", err)
 	}
-	if cfg.Timeout <= 0 {
-		return Config{}, nil, fmt.Errorf("-timeout: %v is not a positive duration", cfg.Timeout)
+	if err := validateTimeout(cfg.Timeout); err != nil {
+		return Config{}, nil, fmt.Errorf("-timeout: %w", err)
 	}
-	return cfg, fs.Args(), nil
+	targets := append(append([]string{}, fileTargets...), fs.Args()...)
+	return cfg, targets, nil
 }
