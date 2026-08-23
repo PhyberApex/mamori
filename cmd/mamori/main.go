@@ -58,7 +58,7 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 	if err := reporterFor(cfg.Output).Report(findings, out); err != nil {
 		return err
 	}
-	if cfg.FailOn != "" && scanner.AnyFails(findings, cfg.FailOn) {
+	if scanner.AnyFails(findings, cfg.FailOn) {
 		return errFailThreshold
 	}
 	return nil

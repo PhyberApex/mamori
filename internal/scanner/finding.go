@@ -84,11 +84,18 @@ type Finding struct {
 }
 
 // Fails reports whether f should trip a -fail-on gate at the given
-// threshold. A StatusError always fails, regardless of threshold, since a
-// scan that couldn't complete shouldn't silently report success; a
+// threshold. The zero-value threshold ("none", per Severity.String) never
+// fails anything — that has to be enforced here rather than left to callers,
+// since "none" is Severity's own stand-in for "gate disabled" and every
+// caller of Fails/AnyFails needs that guarantee, not just -fail-on's current
+// call site. Otherwise a StatusError always fails, regardless of threshold,
+// since a scan that couldn't complete shouldn't silently report success; a
 // Missing/Weak finding fails once its severity reaches threshold; a Pass
 // never fails.
 func (f Finding) Fails(threshold Severity) bool {
+	if threshold == "" {
+		return false
+	}
 	if f.Status == StatusError {
 		return true
 	}

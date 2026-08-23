@@ -136,6 +136,12 @@ func TestFindingFails(t *testing.T) {
 			threshold: scanner.SeverityHigh,
 			want:      true,
 		},
+		{
+			name:      "none threshold never fails, even a StatusError finding",
+			finding:   scanner.Finding{Status: scanner.StatusError, Severity: scanner.SeverityHigh},
+			threshold: scanner.Severity(""),
+			want:      false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

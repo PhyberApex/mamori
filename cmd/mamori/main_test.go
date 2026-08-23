@@ -38,6 +38,15 @@ func TestRunDefaultNeverFailsOnFindings(t *testing.T) {
 	}
 }
 
+func TestRunDefaultNeverFailsOnScanError(t *testing.T) {
+	// Nothing listens here, so the scan itself fails and produces a
+	// StatusError finding. Even that must not fail the run when -fail-on
+	// is unset, since "none" has to mean "never fail" unconditionally.
+	if err := run([]string{"http://127.0.0.1:1"}, nil, io.Discard); err != nil {
+		t.Errorf("run() with -fail-on unset returned %v, want nil for a scan error", err)
+	}
+}
+
 func TestRunFailOnMediumFailsOnMissingFindings(t *testing.T) {
 	url := headerServer(t, nil)
 	err := run([]string{"-fail-on", "medium", url}, nil, io.Discard)
