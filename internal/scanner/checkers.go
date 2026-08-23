@@ -124,11 +124,43 @@ func (ReferrerPolicyChecker) Check(headers http.Header) []Finding {
 // referrerPolicyWeakness flags unsafe-url, which explicitly sends the full
 // URL (including any query string) to third parties on every cross-origin
 // request — the opposite of what this header is for.
+//
+// A single Referrer-Policy value may be a comma-separated fallback list
+// (e.g. "strict-origin-when-cross-origin, unsafe-url"), and per the
+// Referrer Policy spec the browser applies the last *recognized* token in
+// that list, not the value as a whole — so a strong-looking value can still
+// resolve to unsafe-url if a weaker token follows it.
 func referrerPolicyWeakness(value string) (weak bool, message string) {
-	if strings.EqualFold(strings.TrimSpace(value), "unsafe-url") {
+	if strings.EqualFold(effectiveReferrerPolicy(value), "unsafe-url") {
 		return true, "unsafe-url leaks the full URL, including query strings, to third parties on cross-origin requests"
 	}
 	return false, ""
+}
+
+var knownReferrerPolicies = map[string]bool{
+	"no-referrer":                     true,
+	"no-referrer-when-downgrade":      true,
+	"origin":                          true,
+	"origin-when-cross-origin":        true,
+	"same-origin":                     true,
+	"strict-origin":                   true,
+	"strict-origin-when-cross-origin": true,
+	"unsafe-url":                      true,
+}
+
+// effectiveReferrerPolicy returns the token a browser would actually apply
+// from a (possibly comma-separated) Referrer-Policy value: later recognized
+// tokens override earlier ones, and unrecognized tokens are skipped rather
+// than treated as the effective policy.
+func effectiveReferrerPolicy(value string) string {
+	effective := ""
+	for _, token := range strings.Split(value, ",") {
+		token = strings.TrimSpace(token)
+		if knownReferrerPolicies[strings.ToLower(token)] {
+			effective = token
+		}
+	}
+	return effective
 }
 
 func checkPresence(headers http.Header, name string, severity Severity, reference string) []Finding {
@@ -151,16 +183,24 @@ func checkPresence(headers http.Header, name string, severity Severity, referenc
 //
 // A misconfigured proxy or CDN can cause a header to appear more than once
 // in the same response; headers.Get only ever sees the first of those. We
-// validate every occurrence and flag the finding as soon as any one of them
-// is weak, rather than letting send order decide whether the scan reports
-// pass or weak.
+// validate every non-blank occurrence and flag the finding as soon as any
+// one of them is weak, rather than letting send order decide whether the
+// scan reports pass or weak. A blank occurrence (e.g. a stray empty
+// duplicate appended by some infra) is skipped rather than validated: it
+// carries no value of its own to judge, and treating "" as a value would
+// let it masquerade as a weak one, downgrading an otherwise strong header
+// on the strength of infra noise.
 func checkValue(headers http.Header, name string, severity Severity, reference string, validate func(value string) (weak bool, message string)) []Finding {
 	findings := checkPresence(headers, name, severity, reference)
 	if findings[0].Status != StatusPass {
 		return findings
 	}
 	for _, value := range headers.Values(name) {
-		if weak, message := validate(strings.TrimSpace(value)); weak {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if weak, message := validate(value); weak {
 			findings[0].Status = StatusWeak
 			findings[0].Message = message
 			break

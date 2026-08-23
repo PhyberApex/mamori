@@ -113,6 +113,29 @@ func TestHSTSFlagsWeakAmongDuplicateHeaders(t *testing.T) {
 	}
 }
 
+func TestCheckValueIgnoresBlankDuplicateOccurrence(t *testing.T) {
+	// Some infra appends a stray empty duplicate header instead of leaving
+	// the original alone. That blank occurrence carries no value to judge
+	// and must not itself be treated as a weak one.
+	tests := []struct {
+		name    string
+		checker scanner.Checker
+		headers http.Header
+	}{
+		{"HSTS", scanner.HSTSChecker{}, http.Header{"Strict-Transport-Security": {"max-age=63072000", ""}}},
+		{"FrameOptions", scanner.FrameOptionsChecker{}, http.Header{"X-Frame-Options": {"DENY", ""}}},
+		{"ReferrerPolicy", scanner.ReferrerPolicyChecker{}, http.Header{"Referrer-Policy": {"strict-origin-when-cross-origin", ""}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			findings := tt.checker.Check(tt.headers)
+			if findings[0].Status != scanner.StatusPass {
+				t.Errorf("Status = %q, want %q (blank duplicate should not downgrade a strong value)", findings[0].Status, scanner.StatusPass)
+			}
+		})
+	}
+}
+
 func TestFrameOptionsWeakValues(t *testing.T) {
 	tests := []string{"ALLOW-FROM https://example.com", "allowall", "garbage"}
 	for _, value := range tests {
@@ -152,5 +175,36 @@ func TestReferrerPolicyWeakValues(t *testing.T) {
 				t.Error("Message is empty, want an explanation")
 			}
 		})
+	}
+}
+
+func TestReferrerPolicyWeakFallbackList(t *testing.T) {
+	// A single value can be a comma-separated fallback list; per spec the
+	// browser applies the last *recognized* token, not the value verbatim.
+	tests := []string{
+		"strict-origin-when-cross-origin, unsafe-url",
+		"strict-origin-when-cross-origin, not-a-real-policy, unsafe-url",
+	}
+	for _, value := range tests {
+		t.Run(value, func(t *testing.T) {
+			findings := scanner.ReferrerPolicyChecker{}.Check(http.Header{"Referrer-Policy": {value}})
+			if findings[0].Status != scanner.StatusWeak {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+			}
+			if findings[0].Message == "" {
+				t.Error("Message is empty, want an explanation")
+			}
+		})
+	}
+}
+
+func TestReferrerPolicyAcceptsFallbackListEndingStrong(t *testing.T) {
+	// The reverse order: an unsafe-url earlier in the list is overridden by
+	// a later recognized, safe token — that's the effective policy applied.
+	findings := scanner.ReferrerPolicyChecker{}.Check(http.Header{
+		"Referrer-Policy": {"unsafe-url, strict-origin-when-cross-origin"},
+	})
+	if findings[0].Status != scanner.StatusPass {
+		t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
 	}
 }
