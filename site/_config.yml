@@ -10,3 +10,4 @@ header_pages:
   - checks/x-frame-options.md
   - checks/content-security-policy.md
   - checks/referrer-policy.md
+  - checks/set-cookie.md

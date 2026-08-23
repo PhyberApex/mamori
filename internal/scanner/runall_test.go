@@ -17,6 +17,10 @@ func TestRunAllFansOutAcrossDefaultCheckers(t *testing.T) {
 		statusByHeader[f.Header] = f.Status
 	}
 
+	// No Set-Cookie header is present, so CookieChecker contributes no
+	// findings here (unlike the other checkers, an absent cookie jar isn't
+	// itself a finding) and the expected count/map below is unaffected by
+	// its inclusion in DefaultCheckers().
 	want := map[string]scanner.Status{
 		"Strict-Transport-Security": scanner.StatusMissing,
 		"X-Content-Type-Options":    scanner.StatusMissing,

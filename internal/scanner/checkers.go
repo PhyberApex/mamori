@@ -18,6 +18,7 @@ func DefaultCheckers() []Checker {
 		FrameOptionsChecker{},
 		CSPChecker{},
 		ReferrerPolicyChecker{},
+		CookieChecker{},
 	}
 }
 
@@ -172,6 +173,66 @@ func effectiveReferrerPolicy(value string) string {
 		}
 	}
 	return effective
+}
+
+const cookieReference = "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html"
+
+// CookieChecker inspects every Set-Cookie header for the three flags that
+// keep a cookie from being trivially stolen or forged: Secure, HttpOnly, and
+// SameSite. Unlike the other checkers, a response with no cookies has
+// nothing to protect, so no Set-Cookie header is not itself a finding — only
+// a present-but-weak cookie is.
+type CookieChecker struct{}
+
+func (CookieChecker) Check(headers http.Header) []Finding {
+	var findings []Finding
+	for _, line := range headers.Values("Set-Cookie") {
+		cookie, err := http.ParseSetCookie(line)
+		if err != nil {
+			continue
+		}
+		findings = append(findings, cookieFindings(cookie)...)
+	}
+	return findings
+}
+
+// cookieAttributes lists the three flags CookieChecker judges, in the order
+// findings are reported. Go only sets SameSite to Lax/Strict when the
+// attribute is explicitly present with a recognized value; a missing
+// attribute leaves the zero value, and an unrecognized value maps to
+// SameSiteDefaultMode, so anything other than Lax/Strict is either absent
+// or explicit None.
+var cookieAttributes = []struct {
+	name     string
+	severity Severity
+	weak     func(cookie *http.Cookie) bool
+	message  string
+}{
+	{"Secure", SeverityHigh, func(c *http.Cookie) bool { return !c.Secure }, "lacks the Secure flag and can be sent over plain HTTP"},
+	{"HttpOnly", SeverityMedium, func(c *http.Cookie) bool { return !c.HttpOnly }, "lacks the HttpOnly flag and can be read by client-side JavaScript"},
+	{"SameSite", SeverityMedium, func(c *http.Cookie) bool {
+		return c.SameSite != http.SameSiteLaxMode && c.SameSite != http.SameSiteStrictMode
+	}, "is missing SameSite=Strict/Lax and will be sent on cross-site requests"},
+}
+
+// cookieFindings reports each weak attribute of a single cookie
+// independently, mirroring how the other checkers emit one Finding per
+// header rather than bundling unrelated weaknesses into one message.
+func cookieFindings(cookie *http.Cookie) []Finding {
+	var findings []Finding
+	for _, attr := range cookieAttributes {
+		if !attr.weak(cookie) {
+			continue
+		}
+		findings = append(findings, Finding{
+			Header:    fmt.Sprintf("Set-Cookie: %s (%s)", cookie.Name, attr.name),
+			Status:    StatusWeak,
+			Severity:  attr.severity,
+			Reference: cookieReference,
+			Message:   fmt.Sprintf("cookie %q %s", cookie.Name, attr.message),
+		})
+	}
+	return findings
 }
 
 func checkPresence(headers http.Header, name string, severity Severity, reference string) []Finding {
