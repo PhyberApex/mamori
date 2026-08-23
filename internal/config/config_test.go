@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/PhyberApex/mamori/internal/config"
+	"github.com/PhyberApex/mamori/internal/scanner"
 )
 
 func noEnv(string) string { return "" }
@@ -30,6 +31,9 @@ func TestResolveDefaults(t *testing.T) {
 	if cfg.Output != config.OutputTerminal {
 		t.Errorf("Output = %q, want default %q", cfg.Output, config.OutputTerminal)
 	}
+	if cfg.FailOn != "" {
+		t.Errorf("FailOn = %q, want zero value (\"none\")", cfg.FailOn)
+	}
 }
 
 func TestResolveEnvOverridesDefaults(t *testing.T) {
@@ -37,6 +41,7 @@ func TestResolveEnvOverridesDefaults(t *testing.T) {
 		"MAMORI_WORKERS": "3",
 		"MAMORI_TIMEOUT": "2s",
 		"MAMORI_OUTPUT":  "json",
+		"MAMORI_FAIL_ON": "medium",
 	}))
 	if err != nil {
 		t.Fatalf("Resolve() returned error: %v", err)
@@ -50,15 +55,19 @@ func TestResolveEnvOverridesDefaults(t *testing.T) {
 	if cfg.Output != config.OutputJSON {
 		t.Errorf("Output = %q, want %q from MAMORI_OUTPUT", cfg.Output, config.OutputJSON)
 	}
+	if cfg.FailOn != scanner.SeverityMedium {
+		t.Errorf("FailOn = %q, want %q from MAMORI_FAIL_ON", cfg.FailOn, scanner.SeverityMedium)
+	}
 }
 
 func TestResolveFlagsOverrideEnv(t *testing.T) {
 	cfg, rest, err := config.Resolve(
-		[]string{"-workers", "5", "-timeout", "1s", "-o", "terminal", "https://a.example"},
+		[]string{"-workers", "5", "-timeout", "1s", "-o", "terminal", "-fail-on", "high", "https://a.example"},
 		envWith(map[string]string{
 			"MAMORI_WORKERS": "3",
 			"MAMORI_TIMEOUT": "2s",
 			"MAMORI_OUTPUT":  "json",
+			"MAMORI_FAIL_ON": "low",
 		}),
 	)
 	if err != nil {
@@ -72,6 +81,9 @@ func TestResolveFlagsOverrideEnv(t *testing.T) {
 	}
 	if cfg.Output != config.OutputTerminal {
 		t.Errorf("Output = %q, want %q from -o flag", cfg.Output, config.OutputTerminal)
+	}
+	if cfg.FailOn != scanner.SeverityHigh {
+		t.Errorf("FailOn = %q, want %q from -fail-on flag", cfg.FailOn, scanner.SeverityHigh)
 	}
 	if len(rest) != 1 || rest[0] != "https://a.example" {
 		t.Errorf("remaining args = %v, want [https://a.example]", rest)
@@ -89,6 +101,7 @@ func TestResolveRejectsInvalidEnvValues(t *testing.T) {
 		{"unparseable timeout", map[string]string{"MAMORI_TIMEOUT": "fast"}},
 		{"negative timeout", map[string]string{"MAMORI_TIMEOUT": "-1s"}},
 		{"unknown output format", map[string]string{"MAMORI_OUTPUT": "xml"}},
+		{"unknown fail-on level", map[string]string{"MAMORI_FAIL_ON": "critical"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -108,5 +121,24 @@ func TestResolveRejectsNonPositiveWorkersFlag(t *testing.T) {
 func TestResolveRejectsUnknownOutputFlag(t *testing.T) {
 	if _, _, err := config.Resolve([]string{"-o", "xml"}, noEnv); err == nil {
 		t.Error("Resolve() with -o xml returned nil error, want error")
+	}
+}
+
+func TestResolveRejectsUnknownFailOnFlag(t *testing.T) {
+	if _, _, err := config.Resolve([]string{"-fail-on", "critical"}, noEnv); err == nil {
+		t.Error("Resolve() with -fail-on critical returned nil error, want error")
+	}
+}
+
+func TestResolveFailOnNoneFlagOverridesEnv(t *testing.T) {
+	cfg, _, err := config.Resolve(
+		[]string{"-fail-on", "none"},
+		envWith(map[string]string{"MAMORI_FAIL_ON": "low"}),
+	)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.FailOn != "" {
+		t.Errorf("FailOn = %q, want zero value (\"none\") from -fail-on none", cfg.FailOn)
 	}
 }

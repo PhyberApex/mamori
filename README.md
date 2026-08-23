@@ -66,8 +66,18 @@ Full reference for every check mamori performs is available at
 | `-workers` | `10` | number of concurrent scan workers |
 | `-timeout` | `10s` | HTTP request timeout (e.g. `5s`) |
 | `-o` | `terminal` | output format: `terminal` or `json` |
+| `-fail-on` | `none` | exit non-zero on findings at or above this severity: `low`, `medium`, `high`, or `none` |
 
 `-o json` emits newline-delimited JSON, one finding per line.
+
+`-fail-on` gates the exit code on the scan's own findings, for use as a CI
+check. The default, `none`, never fails — the exit code stays `0` no matter
+what the scan finds. Set it to `low`, `medium`, or `high` to enable gating:
+a `missing` or `weak` finding fails once its severity reaches the configured
+threshold, and a finding that couldn't be scanned at all (`error`) always
+fails, regardless of threshold. When the gate trips, `mamori` exits `1`
+without an extra error line, since the report above has already shown which
+finding is responsible.
 
 ### Environment variables
 
@@ -79,6 +89,7 @@ precedence.
 | `MAMORI_WORKERS` | `-workers` |
 | `MAMORI_TIMEOUT` | `-timeout` |
 | `MAMORI_OUTPUT` | `-o` |
+| `MAMORI_FAIL_ON` | `-fail-on` |
 
 ## License
 
