@@ -67,10 +67,29 @@ func (o *Output) Set(v string) error {
 // is validated by the one place that already knows what "known format"
 // means instead of a second string comparison growing elsewhere.
 func (o *Output) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind != yaml.ScalarNode {
+		return fmt.Errorf("output: must be a string, not %s", describeYAMLKind(value.Kind))
+	}
 	if err := o.Set(value.Value); err != nil {
 		return fmt.Errorf("output: %w", err)
 	}
 	return nil
+}
+
+// describeYAMLKind names a yaml.Node's Kind for the UnmarshalYAML error
+// message above, so a wrong-typed output value (e.g. a list) reports what
+// was actually found instead of being mistaken for an empty string.
+func describeYAMLKind(kind yaml.Kind) string {
+	switch kind {
+	case yaml.SequenceNode:
+		return "a list"
+	case yaml.MappingNode:
+		return "a mapping"
+	case yaml.AliasNode:
+		return "an alias"
+	default:
+		return "that value"
+	}
 }
 
 // validateWorkers reports whether n satisfies the "positive integer" rule

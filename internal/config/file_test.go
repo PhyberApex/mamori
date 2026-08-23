@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -188,6 +189,17 @@ func TestResolveConfigFileRejectsUnknownOutput(t *testing.T) {
 	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `output: xml`)
 	if _, _, err := config.Resolve([]string{"-config", path}, noEnv); err == nil {
 		t.Error("Resolve() with an unknown output format in config file returned nil error, want error")
+	}
+}
+
+func TestResolveConfigFileRejectsNonScalarOutput(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", "output: [terminal, json]\n")
+	_, _, err := config.Resolve([]string{"-config", path}, noEnv)
+	if err == nil {
+		t.Fatal("Resolve() with a non-scalar output in config file returned nil error, want error")
+	}
+	if strings.Contains(err.Error(), `""`) {
+		t.Errorf("Resolve() error = %q, want it to describe the list rather than an empty string", err.Error())
 	}
 }
 
