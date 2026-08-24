@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/url"
 	"sync"
 )
 
@@ -46,16 +47,37 @@ func Scan(ctx context.Context, client *http.Client, checkers []Checker, urls []s
 	return findings
 }
 
-func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, url string) []Finding {
-	headers, err := fetchHeaders(ctx, client, url)
+func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, target string) []Finding {
+	headers, err := fetchHeaders(ctx, client, target)
 	if err != nil {
-		return []Finding{{URL: url, Status: StatusError, Message: err.Error()}}
+		return []Finding{{URL: target, Status: StatusError, Message: err.Error()}}
 	}
 	findings := RunAll(checkers, headers)
+	findings = append(findings, mixedContentFindings(ctx, client, target)...)
 	for i := range findings {
-		findings[i].URL = url
+		findings[i].URL = target
 	}
 	return findings
+}
+
+// mixedContentFindings scans the response body for insecure http://
+// references, but only for https:// targets — an http:// page has no TLS
+// guarantee for mixed content to undermine. The body needs a dedicated GET
+// (fetchHeaders may only have sent a HEAD), and a failure to fetch it is
+// treated as nothing to report rather than a scan error: the header checks
+// above already proved the target reachable, so a hiccup on this second
+// request shouldn't fail the whole scan.
+func mixedContentFindings(ctx context.Context, client *http.Client, target string) []Finding {
+	u, err := url.Parse(target)
+	if err != nil || u.Scheme != "https" {
+		return nil
+	}
+	body, err := fetchBody(ctx, client, target)
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = body.Close() }()
+	return MixedContentChecker{}.Check(body)
 }
 
 func fetchHeaders(ctx context.Context, client *http.Client, url string) (http.Header, error) {
@@ -70,6 +92,21 @@ func fetchHeaders(ctx context.Context, client *http.Client, url string) (http.He
 		}
 	}
 	return headers, nil
+}
+
+// fetchBody issues a GET and returns the live response body for the caller
+// to read and close, unlike doRequest which drains and discards it — the
+// header checks never need the body, but mixedContentFindings does.
+func fetchBody(ctx context.Context, client *http.Client, url string) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return resp.Body, nil
 }
 
 func doRequest(ctx context.Context, client *http.Client, method, url string) (http.Header, int, error) {
