@@ -21,7 +21,11 @@ Every resource an `https://` page loads should also use `https://`, or a scheme-
 
 ## What mamori checks
 
-The `src`/`href` attribute of every `img`, `script`, `link`, `iframe`, `audio`, and `video` tag in the response body, for `https://` targets only — an `http://` target has no TLS guarantee for mixed content to undermine, so it isn't checked. Each reference that starts with `http://` is reported as a medium-severity `WEAK` finding; a page can produce multiple findings, one per insecure reference. A page with no insecure references produces no findings — there's no `PASS` case, mirroring how the banner disclosure check treats absence as the desired state.
+The `src`/`href` attribute of every `img`, `script`, `link`, `iframe`, `audio`, and `video` tag in the response body, for `https://` targets only — an `http://` target has no TLS guarantee for mixed content to undermine, so it isn't checked. Only a successful (`2xx`), HTML response is scanned; an error page, redirect, or non-HTML body (JSON, binary) is skipped, since it isn't the page mamori was asked to check. For `link`, only `rel` values the browser actually fetches count (`stylesheet`, `icon`, `apple-touch-icon`, `manifest`, `preload`, `prefetch`, `prerender`) — metadata-only relations like `canonical` or `alternate` are never dereferenced, so flagging them would be a false positive. Each reference that starts with `http://` is reported as a medium-severity `WEAK` finding; a page can produce multiple findings, one per insecure reference. A page with no insecure references produces no findings — there's no `PASS` case, mirroring how the banner disclosure check treats absence as the desired state.
+
+mamori reads at most 5MB of the response body — insecure references live in early markup, so a cap keeps a huge or slow-drip response from costing unbounded memory.
+
+If the body can't be fetched after the header checks already succeeded (e.g. a transient failure on the follow-up request), mamori reports a single `ERROR` finding for Mixed Content rather than silently reporting zero findings, so "checked and clean" is never confused with "the check didn't run".
 
 ## Further reading
 

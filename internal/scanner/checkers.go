@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -22,6 +23,20 @@ func DefaultCheckers() []Checker {
 		PermissionsPolicyChecker{},
 		BannerDisclosureChecker{},
 	}
+}
+
+// BodyChecker is a Checker that inspects the response body instead of its
+// headers. It's a separate interface rather than an extension of Checker
+// because it needs a fundamentally different input, and because acting on
+// it costs an extra request (see Scan) that a caller may not want to pay for
+// every target — a Checker always runs, a BodyChecker only runs when passed
+// in.
+type BodyChecker interface {
+	Check(body io.Reader) []Finding
+}
+
+func DefaultBodyCheckers() []BodyChecker {
+	return []BodyChecker{MixedContentChecker{}}
 }
 
 func RunAll(checkers []Checker, headers http.Header) []Finding {

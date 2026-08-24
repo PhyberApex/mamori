@@ -59,6 +59,32 @@ func TestMixedContentIsCaseInsensitiveToScheme(t *testing.T) {
 	}
 }
 
+func TestMixedContentIgnoresNonFetchingLinkRel(t *testing.T) {
+	body := `<html><head><link rel="canonical" href="http://insecure.example.com/page"></head></html>`
+	findings := scanner.MixedContentChecker{}.Check(strings.NewReader(body))
+	if len(findings) != 0 {
+		t.Errorf("Check() returned %d findings, want 0 (rel=canonical is never fetched by the browser): %+v", len(findings), findings)
+	}
+}
+
+func TestMixedContentFlagsFetchingLinkRel(t *testing.T) {
+	body := `<html><head><link rel="icon" href="http://insecure.example.com/favicon.ico"></head></html>`
+	findings := scanner.MixedContentChecker{}.Check(strings.NewReader(body))
+	if len(findings) != 1 {
+		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
+	}
+}
+
+func TestMixedContentDetectsSchemeWithEmbeddedNewline(t *testing.T) {
+	// Browsers strip ASCII tab/newline/CR from anywhere in a URL before
+	// parsing it, so this still resolves to http://insecure.example.com/x.
+	body := "<html><body><img src=\"ht\ntp://insecure.example.com/x.png\"></body></html>"
+	findings := scanner.MixedContentChecker{}.Check(strings.NewReader(body))
+	if len(findings) != 1 {
+		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
+	}
+}
+
 func TestMixedContentAllSecureProducesNoFindings(t *testing.T) {
 	body := `<html><head><link rel="stylesheet" href="https://secure.example.com/style.css"></head>
 <body><img src="https://secure.example.com/logo.png"><script src="/relative.js"></script></body></html>`

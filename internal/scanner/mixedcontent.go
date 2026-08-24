@@ -25,6 +25,43 @@ var mixedContentTags = map[string]bool{
 
 var mixedContentAttrs = map[string]bool{"src": true, "href": true}
 
+// linkFetchingRels lists the rel values that make a <link> a subresource the
+// browser actually fetches (and so applies mixed-content blocking to).
+// Most rel values — canonical, alternate, author, license, search — are pure
+// metadata the browser never dereferences, so treating every <link href>
+// as mixed content would flag the canonical tag on most real https:// pages.
+var linkFetchingRels = map[string]bool{
+	"stylesheet":                   true,
+	"icon":                         true,
+	"apple-touch-icon":             true,
+	"apple-touch-icon-precomposed": true,
+	"manifest":                     true,
+	"preload":                      true,
+	"prefetch":                     true,
+	"prerender":                    true,
+}
+
+// isFetchingLinkToken reports whether an https response would actually load
+// this token's resource: every tag besides <link> in mixedContentTags always
+// fetches its src, but a <link> only fetches href for a rel value in
+// linkFetchingRels.
+func isFetchingLinkToken(token html.Token) bool {
+	if token.Data != "link" {
+		return true
+	}
+	for _, attr := range token.Attr {
+		if attr.Key != "rel" {
+			continue
+		}
+		for _, rel := range strings.Fields(strings.ToLower(attr.Val)) {
+			if linkFetchingRels[rel] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // MixedContentChecker scans an https:// response body for resource
 // references that load over plain http:// instead. Those resources bypass
 // TLS entirely, so a network attacker can tamper with or substitute them
@@ -35,6 +72,12 @@ var mixedContentAttrs = map[string]bool{"src": true, "href": true}
 // a clean page has nothing to flag, so it produces no findings at all,
 // mirroring how BannerDisclosureChecker treats absence as the desired state.
 type MixedContentChecker struct{}
+
+var asciiWhitespaceStripper = strings.NewReplacer("\t", "", "\n", "", "\r", "")
+
+func stripASCIIWhitespace(value string) string {
+	return strings.TrimSpace(asciiWhitespaceStripper.Replace(value))
+}
 
 func (MixedContentChecker) Check(body io.Reader) []Finding {
 	var findings []Finding
@@ -48,14 +91,18 @@ func (MixedContentChecker) Check(body io.Reader) []Finding {
 			continue
 		}
 		token := tokenizer.Token()
-		if !mixedContentTags[token.Data] {
+		if !mixedContentTags[token.Data] || !isFetchingLinkToken(token) {
 			continue
 		}
 		for _, attr := range token.Attr {
 			if !mixedContentAttrs[attr.Key] {
 				continue
 			}
-			value := strings.TrimSpace(attr.Val)
+			// Browsers strip ASCII tab/newline/carriage-return from anywhere
+			// in a URL before parsing its scheme (WHATWG URL spec), not just
+			// the ends, so a value like "ht\ntp://" still resolves to plain
+			// http:// even though a plain TrimSpace wouldn't catch it.
+			value := stripASCIIWhitespace(attr.Val)
 			if !strings.HasPrefix(strings.ToLower(value), "http://") {
 				continue
 			}
