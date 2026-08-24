@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"io"
 	"net/http"
@@ -23,12 +25,27 @@ func strongHeaders() map[string]string {
 
 func headerServer(t *testing.T, headers map[string]string) string {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// TLS: the security.txt probe forces https regardless of target scheme
+	// (RFC 9116), so a plain-http server would fail that probe outright.
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		for name, value := range headers {
 			w.Header().Set(name, value)
 		}
 	}))
 	t.Cleanup(srv.Close)
+
+	// run() builds its own http.Client from http.DefaultTransport rather
+	// than accepting one, so trust this server's self-signed cert there for
+	// the test's duration; every test in this file runs sequentially, so
+	// there's no cross-test race on the swap.
+	original := http.DefaultTransport
+	transport := original.(*http.Transport).Clone()
+	pool := x509.NewCertPool()
+	pool.AddCert(srv.Certificate())
+	transport.TLSClientConfig = &tls.Config{RootCAs: pool}
+	http.DefaultTransport = transport
+	t.Cleanup(func() { http.DefaultTransport = original })
+
 	return srv.URL
 }
 

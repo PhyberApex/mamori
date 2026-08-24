@@ -3,6 +3,7 @@ package scanner_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/PhyberApex/mamori/internal/scanner"
@@ -10,7 +11,7 @@ import (
 
 func TestSecurityTxtCheckerProbesWellKnownPath(t *testing.T) {
 	var gotPath string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -24,7 +25,7 @@ func TestSecurityTxtCheckerProbesWellKnownPath(t *testing.T) {
 }
 
 func TestSecurityTxtCheckerPassesOn2xx(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(srv.Close)
@@ -49,7 +50,7 @@ func TestSecurityTxtCheckerFlagsNon2xxAsMissing(t *testing.T) {
 		http.StatusInternalServerError,
 	}
 	for _, status := range tests {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(status)
 		}))
 
@@ -78,7 +79,7 @@ func TestSecurityTxtCheckerReportsErrorOnRequestFailure(t *testing.T) {
 
 func TestSecurityTxtCheckerIgnoresTargetPath(t *testing.T) {
 	var gotPath string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -88,5 +89,23 @@ func TestSecurityTxtCheckerIgnoresTargetPath(t *testing.T) {
 
 	if gotPath != "/.well-known/security.txt" {
 		t.Errorf("probed path = %q, want %q (target's own path/query must not leak in)", gotPath, "/.well-known/security.txt")
+	}
+}
+
+func TestSecurityTxtCheckerForcesHTTPSScheme(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	// RFC 9116 section 3: "the file access MUST use the 'https' scheme".
+	// Rewrite the TLS server's own https URL to look like an http target;
+	// if the checker didn't force https, this would fail to reach the
+	// TLS-only server at all.
+	httpTarget := "http://" + strings.TrimPrefix(srv.URL, "https://")
+
+	findings := scanner.SecurityTxtChecker{}.Check(t.Context(), srv.Client(), httpTarget)
+	if findings[0].Status != scanner.StatusPass {
+		t.Errorf("Status = %q, want %q (probe should have used https despite an http:// target)", findings[0].Status, scanner.StatusPass)
 	}
 }

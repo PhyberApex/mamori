@@ -23,7 +23,7 @@ Expires: 2027-01-01T00:00:00.000Z
 
 ## What mamori checks
 
-Whether `GET /.well-known/security.txt` on the target's scheme and host returns a 2xx status. Any non-2xx response (404, a redirect, a server error) is reported as a low-severity `MISSING` finding. This is a well-known, publicly-intended discovery path — unlike probing for arbitrary sensitive files — so the check always runs, with no opt-in required.
+Whether `GET /.well-known/security.txt` on the target's host returns a 2xx status. The request always uses `https`, regardless of the scheme the target was scanned with — RFC 9116 §3 requires "the file access MUST use the 'https' scheme" — so a target with no HTTPS support reports as `ERROR`, not `MISSING`. Any non-2xx response (404, a redirect, a server error) is reported as a low-severity `MISSING` finding. This is a well-known, publicly-intended discovery path — unlike probing for arbitrary sensitive files — so the check always runs, with no opt-in required.
 
 ## Further reading
 

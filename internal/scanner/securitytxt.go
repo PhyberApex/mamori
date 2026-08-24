@@ -46,14 +46,17 @@ func (SecurityTxtChecker) Check(ctx context.Context, client *http.Client, target
 }
 
 // securityTxtURL resolves RFC 9116's fixed well-known path against target's
-// scheme and host, discarding any path/query/fragment target itself carries:
-// the well-known path is always root-relative, regardless of what path the
-// user asked to scan.
+// host, discarding any path/query/fragment target itself carries: the
+// well-known path is always root-relative, regardless of what path the user
+// asked to scan. The scheme is forced to https regardless of target's own
+// scheme: RFC 9116 section 3 requires "the file access MUST use the
+// 'https' scheme".
 func securityTxtURL(target string) (string, error) {
 	u, err := url.Parse(target)
 	if err != nil {
 		return "", fmt.Errorf("parsing target %q: %w", target, err)
 	}
+	u.Scheme = "https"
 	u.Path = "/.well-known/security.txt"
 	u.RawQuery = ""
 	u.Fragment = ""

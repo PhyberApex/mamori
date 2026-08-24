@@ -22,7 +22,9 @@ var allSecurityHeaders = map[string]string{
 
 func scanOne(t *testing.T, handler http.Handler) []scanner.Finding {
 	t.Helper()
-	srv := httptest.NewServer(handler)
+	// TLS: the security.txt probe forces https regardless of target scheme
+	// (RFC 9116), so a plain-http server would fail that probe outright.
+	srv := httptest.NewTLSServer(handler)
 	t.Cleanup(srv.Close)
 
 	findings := scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), []string{srv.URL}, 1)
@@ -159,7 +161,9 @@ func TestScanRunsTargetsConcurrently(t *testing.T) {
 	const targets = 3
 	var wg sync.WaitGroup
 	wg.Add(targets)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// TLS: the security.txt probe forces https regardless of target scheme
+	// (RFC 9116), so a plain-http server would fail that probe outright.
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// The security.txt probe hits the same server on a fixed path outside
 		// this test's target-concurrency handshake; let it through without
 		// joining the wg synchronization, or the extra request per target
@@ -173,7 +177,8 @@ func TestScanRunsTargetsConcurrently(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := srv.Client()
+	client.Timeout = 5 * time.Second
 	urls := []string{srv.URL + "/a", srv.URL + "/b", srv.URL + "/c"}
 	findings := scanner.Scan(t.Context(), client, scanner.DefaultCheckers(), urls, targets)
 
