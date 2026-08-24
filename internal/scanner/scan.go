@@ -52,6 +52,7 @@ func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, ur
 		return []Finding{{URL: url, Status: StatusError, Message: err.Error()}}
 	}
 	findings := RunAll(checkers, headers)
+	findings = append(findings, SecurityTxtChecker{}.Check(ctx, client, url)...)
 	for i := range findings {
 		findings[i].URL = url
 	}

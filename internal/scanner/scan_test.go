@@ -26,8 +26,8 @@ func scanOne(t *testing.T, handler http.Handler) []scanner.Finding {
 	t.Cleanup(srv.Close)
 
 	findings := scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), []string{srv.URL}, 1)
-	if len(findings) != 6 {
-		t.Fatalf("Scan() returned %d findings, want 6", len(findings))
+	if len(findings) != 7 {
+		t.Fatalf("Scan() returned %d findings, want 7", len(findings))
 	}
 	for _, f := range findings {
 		if f.URL != srv.URL {
@@ -56,7 +56,11 @@ func TestScanAllHeadersPresent(t *testing.T) {
 }
 
 func TestScanAllHeadersMissing(t *testing.T) {
-	findings := scanOne(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	findings := scanOne(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 404 so the security.txt probe reads as missing too, matching every
+		// other finding in this "nothing configured" scenario.
+		w.WriteHeader(http.StatusNotFound)
+	}))
 	assertAllStatus(t, findings, scanner.StatusMissing)
 }
 
@@ -80,8 +84,8 @@ func TestScanCoversMultipleURLs(t *testing.T) {
 	t.Cleanup(srvB.Close)
 
 	findings := scanner.Scan(t.Context(), srvA.Client(), scanner.DefaultCheckers(), []string{srvA.URL, srvB.URL}, 2)
-	if len(findings) != 12 {
-		t.Fatalf("Scan() returned %d findings, want 12 (6 per URL)", len(findings))
+	if len(findings) != 14 {
+		t.Fatalf("Scan() returned %d findings, want 14 (7 per URL)", len(findings))
 	}
 }
 
@@ -146,8 +150,8 @@ func TestScanReportsAllTargetsDespiteFailures(t *testing.T) {
 	if got := len(byURL[deadURL]); got != 1 {
 		t.Errorf("dead target has %d findings, want 1 error finding", got)
 	}
-	if got := len(byURL[healthy.URL]); got != 6 {
-		t.Errorf("healthy target has %d findings, want 6", got)
+	if got := len(byURL[healthy.URL]); got != 7 {
+		t.Errorf("healthy target has %d findings, want 7", got)
 	}
 }
 
@@ -156,6 +160,14 @@ func TestScanRunsTargetsConcurrently(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(targets)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The security.txt probe hits the same server on a fixed path outside
+		// this test's target-concurrency handshake; let it through without
+		// joining the wg synchronization, or the extra request per target
+		// would double-call wg.Done() and panic.
+		if r.URL.Path == "/.well-known/security.txt" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		wg.Done()
 		wg.Wait()
 	}))
@@ -166,8 +178,8 @@ func TestScanRunsTargetsConcurrently(t *testing.T) {
 	findings := scanner.Scan(t.Context(), client, scanner.DefaultCheckers(), urls, targets)
 
 	assertAllStatus(t, findings, scanner.StatusMissing)
-	if len(findings) != targets*6 {
-		t.Fatalf("Scan() returned %d findings, want %d", len(findings), targets*6)
+	if len(findings) != targets*7 {
+		t.Fatalf("Scan() returned %d findings, want %d", len(findings), targets*7)
 	}
 }
 
