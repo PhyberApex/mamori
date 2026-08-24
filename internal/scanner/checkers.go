@@ -176,17 +176,6 @@ func effectiveReferrerPolicy(value string) string {
 	return effective
 }
 
-type PermissionsPolicyChecker struct{}
-
-func (PermissionsPolicyChecker) Check(headers http.Header) []Finding {
-	return checkPresence(
-		headers,
-		"Permissions-Policy",
-		SeverityMedium,
-		"https://owasp.org/www-project-secure-headers/#permissions-policy",
-	)
-}
-
 const cookieReference = "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html"
 
 // CookieChecker inspects every Set-Cookie header for the three flags that
@@ -245,6 +234,17 @@ func cookieFindings(cookie *http.Cookie) []Finding {
 		})
 	}
 	return findings
+}
+
+type PermissionsPolicyChecker struct{}
+
+func (PermissionsPolicyChecker) Check(headers http.Header) []Finding {
+	return checkPresence(
+		headers,
+		"Permissions-Policy",
+		SeverityMedium,
+		"https://owasp.org/www-project-secure-headers/#permissions-policy",
+	)
 }
 
 func checkPresence(headers http.Header, name string, severity Severity, reference string) []Finding {
