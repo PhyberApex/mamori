@@ -65,11 +65,16 @@ Full reference for every check mamori performs is available at
 |---|---|---|
 | `-workers` | `10` | number of concurrent scan workers |
 | `-timeout` | `10s` | HTTP request timeout (e.g. `5s`) |
-| `-o` | `terminal` | output format: `terminal` or `json` |
+| `-o` | `terminal` | output format: `terminal`, `json`, or `sarif` |
 | `-fail-on` | `none` | exit non-zero on findings at or above this severity: `low`, `medium`, `high`, or `none` |
 | `-config` | *(none)* | path to a YAML config file |
 
 `-o json` emits newline-delimited JSON, one finding per line.
+
+`-o sarif` emits a [SARIF 2.1.0](https://github.com/oasis-tcs/sarif-spec) log
+for GitHub code scanning / CI integration, with one result per non-pass
+finding; `Severity` maps to SARIF `level` as low→`note`, medium→`warning`,
+high→`error`.
 
 `-fail-on` gates the exit code on the scan's own findings, for use as a CI
 check. The default, `none`, never fails — the exit code stays `0` no matter
