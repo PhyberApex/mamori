@@ -238,18 +238,6 @@ func cookieFindings(cookie *http.Cookie) []Finding {
 
 const bannerDisclosureReference = "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html"
 
-// bannerHeaders lists the headers BannerDisclosureChecker judges. Unlike the
-// other checkers, presence rather than absence is the finding: both headers
-// exist only to advertise backend software/version info, which is useful to
-// an attacker fingerprinting the stack and useful to nobody else.
-var bannerHeaders = []struct {
-	name      string
-	reference string
-}{
-	{"Server", bannerDisclosureReference + "#server"},
-	{"X-Powered-By", bannerDisclosureReference + "#x-powered-by"},
-}
-
 // BannerDisclosureChecker flags the Server and X-Powered-By headers whenever
 // they carry a value. There's no StatusPass/StatusMissing case here: absence
 // is the desired state and isn't itself worth reporting, so a response with
@@ -259,21 +247,27 @@ type BannerDisclosureChecker struct{}
 
 func (BannerDisclosureChecker) Check(headers http.Header) []Finding {
 	var findings []Finding
-	for _, h := range bannerHeaders {
-		value := strings.TrimSpace(headers.Get(h.name))
+	for _, name := range bannerHeaderNames {
+		value := strings.TrimSpace(headers.Get(name))
 		if value == "" {
 			continue
 		}
 		findings = append(findings, Finding{
-			Header:    h.name,
+			Header:    name,
 			Status:    StatusWeak,
 			Severity:  SeverityLow,
-			Reference: h.reference,
+			Reference: bannerDisclosureReference,
 			Message:   fmt.Sprintf("%q reveals backend software/version info useful for fingerprinting the server", value),
 		})
 	}
 	return findings
 }
+
+// bannerHeaderNames lists the headers BannerDisclosureChecker judges. Unlike
+// the other checkers, presence rather than absence is the finding: both
+// headers exist only to advertise backend software/version info, which is
+// useful to an attacker fingerprinting the stack and useful to nobody else.
+var bannerHeaderNames = []string{"Server", "X-Powered-By"}
 
 func checkPresence(headers http.Header, name string, severity Severity, reference string) []Finding {
 	status := StatusPass
