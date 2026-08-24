@@ -95,7 +95,7 @@ func bodyFindings(ctx context.Context, client *http.Client, target string, fallb
 	if resp == nil {
 		resp, err = sendRequest(ctx, client, http.MethodGet, target)
 		if err != nil {
-			return []Finding{{Header: "Mixed Content", Status: StatusError, Message: err.Error()}}
+			return []Finding{{Header: mixedContentHeader, Status: StatusError, Message: err.Error()}}
 		}
 		defer func() { _ = resp.Body.Close() }()
 	}
@@ -109,7 +109,7 @@ func bodyFindings(ctx context.Context, client *http.Client, target string, fallb
 
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
 	if err != nil {
-		return []Finding{{Header: "Mixed Content", Status: StatusError, Message: err.Error()}}
+		return []Finding{{Header: mixedContentHeader, Status: StatusError, Message: err.Error()}}
 	}
 	var findings []Finding
 	for _, c := range bodyCheckers {

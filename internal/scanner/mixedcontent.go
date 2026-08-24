@@ -8,6 +8,8 @@ import (
 	"golang.org/x/net/html"
 )
 
+const mixedContentHeader = "Mixed Content"
+
 const mixedContentReference = "https://developer.mozilla.org/en-US/docs/Web/Security/Mixed_content"
 
 // mixedContentTags lists the elements whose src/href can load a resource of
@@ -107,7 +109,7 @@ func (MixedContentChecker) Check(body io.Reader) []Finding {
 				continue
 			}
 			findings = append(findings, Finding{
-				Header:    "Mixed Content",
+				Header:    mixedContentHeader,
 				Status:    StatusWeak,
 				Severity:  SeverityMedium,
 				Reference: mixedContentReference,
