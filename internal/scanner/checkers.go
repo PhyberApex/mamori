@@ -21,7 +21,19 @@ func DefaultCheckers() []Checker {
 		CookieChecker{},
 		PermissionsPolicyChecker{},
 		BannerDisclosureChecker{},
+		CORSChecker{},
 	}
+}
+
+// OriginProber is implemented by Checkers whose Check method must be
+// evaluated against the response to a dedicated probe request carrying a
+// synthetic cross-origin Origin header, rather than the plain scan request
+// every other Checker judges. Scan detects it with a type assertion and
+// issues at most one such probe request per target, shared by every Checker
+// in the set that implements it.
+type OriginProber interface {
+	Checker
+	ProbesOrigin()
 }
 
 func RunAll(checkers []Checker, headers http.Header) []Finding {
@@ -327,6 +339,60 @@ func (BannerDisclosureChecker) Check(headers http.Header) []Finding {
 // headers exist only to advertise backend software/version info, which is
 // useful to an attacker fingerprinting the stack and useful to nobody else.
 var bannerHeaderNames = []string{"Server", "X-Powered-By"}
+
+// corsProbeOrigin is the synthetic, definitely-foreign origin Scan sends as
+// the Origin header of the extra probe request CORSChecker needs (see
+// OriginProber). Any Access-Control-Allow-Origin that reflects it back, or a
+// bare "*", is telling literally any origin on the internet it may read the
+// response.
+const corsProbeOrigin = "https://mamori-cors-probe.invalid"
+
+const corsReference = "https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html#cross-origin-resource-sharing"
+
+// CORSChecker flags the one CORS combination that's actually dangerous: an
+// Access-Control-Allow-Origin that accepts any origin — either by reflecting
+// back whatever Origin was sent, or a bare "*" — together with
+// Access-Control-Allow-Credentials: true. That pairing lets any site on the
+// internet read authenticated responses via a victim's browser. A bare
+// wildcard with no credentials, or a specific allow-listed origin that
+// doesn't match the probe's, is either intentionally permissive or already
+// origin-restricted, and isn't a finding on its own.
+type CORSChecker struct{}
+
+func (CORSChecker) Check(headers http.Header) []Finding {
+	acao := firstNonBlankValue(headers, "Access-Control-Allow-Origin")
+	if acao != "*" && !strings.EqualFold(acao, corsProbeOrigin) {
+		return nil
+	}
+	if !strings.EqualFold(firstNonBlankValue(headers, "Access-Control-Allow-Credentials"), "true") {
+		return nil
+	}
+	return []Finding{{
+		Header:    "Access-Control-Allow-Origin",
+		Status:    StatusWeak,
+		Severity:  SeverityHigh,
+		Reference: corsReference,
+		Message:   fmt.Sprintf("%q together with Access-Control-Allow-Credentials: true lets any site read authenticated responses via a victim's browser", acao),
+	}}
+}
+
+// ProbesOrigin marks CORSChecker as an OriginProber: Check must see the
+// response to the synthetic-Origin probe request, not the plain scan
+// request's headers.
+func (CORSChecker) ProbesOrigin() {}
+
+// firstNonBlankValue returns the first non-blank occurrence of a header,
+// unlike headers.Get which only ever sees the first occurrence regardless of
+// whether it's blank. A misconfigured proxy or CDN can prepend a blank
+// duplicate instead of leaving the origin's header alone.
+func firstNonBlankValue(headers http.Header, name string) string {
+	for _, raw := range headers.Values(name) {
+		if value := strings.TrimSpace(raw); value != "" {
+			return value
+		}
+	}
+	return ""
+}
 
 func checkPresence(headers http.Header, name string, severity Severity, reference string) []Finding {
 	status := StatusPass

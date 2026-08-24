@@ -490,3 +490,105 @@ func TestBannerDisclosureFlagsValueBehindBlankDuplicateOccurrence(t *testing.T) 
 		t.Error("Message is empty, want an explanation")
 	}
 }
+
+const corsProbeOrigin = "https://mamori-cors-probe.invalid"
+
+func TestCORSNoAccessControlHeadersProducesNoFindings(t *testing.T) {
+	findings := scanner.CORSChecker{}.Check(http.Header{})
+	if len(findings) != 0 {
+		t.Errorf("Check() on headers with no Access-Control-Allow-Origin returned %d findings, want 0: %+v", len(findings), findings)
+	}
+}
+
+func TestCORSFlagsReflectedOriginWithCredentials(t *testing.T) {
+	findings := scanner.CORSChecker{}.Check(http.Header{
+		"Access-Control-Allow-Origin":      {corsProbeOrigin},
+		"Access-Control-Allow-Credentials": {"true"},
+	})
+	if len(findings) != 1 {
+		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
+	}
+	f := findings[0]
+	if f.Header != "Access-Control-Allow-Origin" {
+		t.Errorf("Header = %q, want %q", f.Header, "Access-Control-Allow-Origin")
+	}
+	if f.Status != scanner.StatusWeak {
+		t.Errorf("Status = %q, want %q", f.Status, scanner.StatusWeak)
+	}
+	if f.Severity != scanner.SeverityHigh {
+		t.Errorf("Severity = %q, want %q", f.Severity, scanner.SeverityHigh)
+	}
+	if f.Reference == "" {
+		t.Error("Reference is empty, want a docs URL")
+	}
+	if f.Message == "" {
+		t.Error("Message is empty, want an explanation")
+	}
+}
+
+func TestCORSFlagsWildcardOriginWithCredentials(t *testing.T) {
+	findings := scanner.CORSChecker{}.Check(http.Header{
+		"Access-Control-Allow-Origin":      {"*"},
+		"Access-Control-Allow-Credentials": {"true"},
+	})
+	if len(findings) != 1 {
+		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
+	}
+	if findings[0].Status != scanner.StatusWeak {
+		t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+	}
+}
+
+func TestCORSBareWildcardWithoutCredentialsProducesNoFindings(t *testing.T) {
+	// A wildcard alone (no credentials) is intentionally permissive and fine
+	// per the issue's acceptance criteria.
+	findings := scanner.CORSChecker{}.Check(http.Header{
+		"Access-Control-Allow-Origin": {"*"},
+	})
+	if len(findings) != 0 {
+		t.Errorf("Check() on bare wildcard with no credentials returned %d findings, want 0: %+v", len(findings), findings)
+	}
+}
+
+func TestCORSReflectedOriginWithoutCredentialsProducesNoFindings(t *testing.T) {
+	findings := scanner.CORSChecker{}.Check(http.Header{
+		"Access-Control-Allow-Origin": {corsProbeOrigin},
+	})
+	if len(findings) != 0 {
+		t.Errorf("Check() on reflected origin with no credentials returned %d findings, want 0: %+v", len(findings), findings)
+	}
+}
+
+func TestCORSSpecificAllowedOriginWithCredentialsProducesNoFindings(t *testing.T) {
+	// A specific allow-listed origin that doesn't match the probe's own
+	// origin means the server didn't just accept any origin that asked.
+	findings := scanner.CORSChecker{}.Check(http.Header{
+		"Access-Control-Allow-Origin":      {"https://trusted.example.com"},
+		"Access-Control-Allow-Credentials": {"true"},
+	})
+	if len(findings) != 0 {
+		t.Errorf("Check() on specific allow-listed origin returned %d findings, want 0: %+v", len(findings), findings)
+	}
+}
+
+func TestCORSCredentialsFalseProducesNoFindings(t *testing.T) {
+	findings := scanner.CORSChecker{}.Check(http.Header{
+		"Access-Control-Allow-Origin":      {corsProbeOrigin},
+		"Access-Control-Allow-Credentials": {"false"},
+	})
+	if len(findings) != 0 {
+		t.Errorf("Check() with Access-Control-Allow-Credentials: false returned %d findings, want 0: %+v", len(findings), findings)
+	}
+}
+
+func TestCORSIgnoresBlankDuplicateOccurrence(t *testing.T) {
+	// Mirrors the other checkers' handling of a stray blank duplicate header
+	// appended by misconfigured infra instead of leaving the origin's alone.
+	findings := scanner.CORSChecker{}.Check(http.Header{
+		"Access-Control-Allow-Origin":      {"", corsProbeOrigin},
+		"Access-Control-Allow-Credentials": {"", "true"},
+	})
+	if len(findings) != 1 {
+		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
+	}
+}

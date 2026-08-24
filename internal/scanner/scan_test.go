@@ -156,6 +156,12 @@ func TestScanRunsTargetsConcurrently(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(targets)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// CORSChecker's probe request follows the plain request for the same
+		// target sequentially, not concurrently with it; only the plain
+		// request (no Origin header) is part of the concurrency proof below.
+		if r.Header.Get("Origin") != "" {
+			return
+		}
 		wg.Done()
 		wg.Wait()
 	}))
@@ -198,6 +204,44 @@ func TestScanBoundsConcurrencyToPoolSize(t *testing.T) {
 
 	if p := peak.Load(); p > workers {
 		t.Errorf("peak concurrent requests = %d, want at most %d", p, workers)
+	}
+}
+
+func TestScanSendsOriginProbeAndFlagsReflectedCORSWithCredentials(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if origin := r.Header.Get("Origin"); origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	findings := scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), []string{srv.URL}, 1)
+
+	var corsFindings []scanner.Finding
+	for _, f := range findings {
+		if f.Header == "Access-Control-Allow-Origin" {
+			corsFindings = append(corsFindings, f)
+		}
+	}
+	if len(corsFindings) != 1 {
+		t.Fatalf("got %d Access-Control-Allow-Origin findings, want 1 (proves the probe request with a synthetic Origin header was sent and reflected): %+v", len(corsFindings), findings)
+	}
+	if corsFindings[0].Status != scanner.StatusWeak {
+		t.Errorf("Status = %q, want %q", corsFindings[0].Status, scanner.StatusWeak)
+	}
+}
+
+func TestScanNoCORSHeadersProducesNoCORSFinding(t *testing.T) {
+	findings := scanOne(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for name, value := range allSecurityHeaders {
+			w.Header().Set(name, value)
+		}
+	}))
+	for _, f := range findings {
+		if f.Header == "Access-Control-Allow-Origin" {
+			t.Errorf("unexpected CORS finding on a response with no Access-Control headers: %+v", f)
+		}
 	}
 }
 
