@@ -71,6 +71,8 @@ func reporterFor(o config.Output) scanner.Reporter {
 	switch o {
 	case config.OutputJSON:
 		return scanner.JSONReporter{}
+	case config.OutputSarif:
+		return scanner.SarifReporter{}
 	default:
 		return scanner.TerminalReporter{}
 	}

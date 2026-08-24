@@ -118,6 +118,16 @@ func TestResolveRejectsNonPositiveWorkersFlag(t *testing.T) {
 	}
 }
 
+func TestResolveAcceptsSarifOutputFlag(t *testing.T) {
+	cfg, _, err := config.Resolve([]string{"-o", "sarif"}, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.Output != config.OutputSarif {
+		t.Errorf("Output = %q, want %q from -o flag", cfg.Output, config.OutputSarif)
+	}
+}
+
 func TestResolveRejectsUnknownOutputFlag(t *testing.T) {
 	if _, _, err := config.Resolve([]string{"-o", "xml"}, noEnv); err == nil {
 		t.Error("Resolve() with -o xml returned nil error, want error")
