@@ -248,17 +248,24 @@ type BannerDisclosureChecker struct{}
 func (BannerDisclosureChecker) Check(headers http.Header) []Finding {
 	var findings []Finding
 	for _, name := range bannerHeaderNames {
-		value := strings.TrimSpace(headers.Get(name))
-		if value == "" {
-			continue
+		// A misconfigured proxy or CDN can append a blank duplicate of the
+		// header instead of leaving the origin's alone; headers.Get would
+		// only ever see whichever occurrence happens to be first and could
+		// miss a later, disclosing one. Report the first non-blank value.
+		for _, raw := range headers.Values(name) {
+			value := strings.TrimSpace(raw)
+			if value == "" {
+				continue
+			}
+			findings = append(findings, Finding{
+				Header:    name,
+				Status:    StatusWeak,
+				Severity:  SeverityLow,
+				Reference: bannerDisclosureReference,
+				Message:   fmt.Sprintf("%q reveals backend software/version info useful for fingerprinting the server", value),
+			})
+			break
 		}
-		findings = append(findings, Finding{
-			Header:    name,
-			Status:    StatusWeak,
-			Severity:  SeverityLow,
-			Reference: bannerDisclosureReference,
-			Message:   fmt.Sprintf("%q reveals backend software/version info useful for fingerprinting the server", value),
-		})
 	}
 	return findings
 }

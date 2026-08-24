@@ -430,3 +430,21 @@ func TestBannerDisclosureIgnoresBlankHeaderValue(t *testing.T) {
 		t.Errorf("Check() with blank header values returned %d findings, want 0: %+v", len(findings), findings)
 	}
 }
+
+func TestBannerDisclosureFlagsValueBehindBlankDuplicateOccurrence(t *testing.T) {
+	// Some infra prepends a stray blank duplicate instead of leaving the
+	// origin's header alone. headers.Get would only see that blank first
+	// occurrence and miss the disclosing one behind it.
+	findings := scanner.BannerDisclosureChecker{}.Check(http.Header{
+		"Server": {"", "nginx/1.18.0"},
+	})
+	if len(findings) != 1 {
+		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
+	}
+	if findings[0].Status != scanner.StatusWeak {
+		t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+	}
+	if findings[0].Message == "" {
+		t.Error("Message is empty, want an explanation")
+	}
+}
