@@ -12,11 +12,12 @@ import (
 // server built from this map alone never trips -fail-on at any severity.
 func strongHeaders() map[string]string {
 	return map[string]string{
-		"Strict-Transport-Security": "max-age=63072000; includeSubDomains",
-		"X-Content-Type-Options":    "nosniff",
-		"X-Frame-Options":           "DENY",
-		"Content-Security-Policy":   "default-src 'self'",
-		"Referrer-Policy":           "strict-origin-when-cross-origin",
+		"Strict-Transport-Security":    "max-age=63072000; includeSubDomains",
+		"X-Content-Type-Options":       "nosniff",
+		"X-Frame-Options":              "DENY",
+		"Content-Security-Policy":      "default-src 'self'",
+		"Referrer-Policy":              "strict-origin-when-cross-origin",
+		"Cross-Origin-Resource-Policy": "same-origin",
 	}
 }
 

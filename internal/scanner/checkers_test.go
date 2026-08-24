@@ -20,6 +20,7 @@ func TestCheckersIdentity(t *testing.T) {
 		{scanner.FrameOptionsChecker{}, "X-Frame-Options", scanner.SeverityMedium, "DENY"},
 		{scanner.CSPChecker{}, "Content-Security-Policy", scanner.SeverityHigh, "default-src 'self'"},
 		{scanner.ReferrerPolicyChecker{}, "Referrer-Policy", scanner.SeverityLow, "strict-origin-when-cross-origin"},
+		{scanner.CORPChecker{}, "Cross-Origin-Resource-Policy", scanner.SeverityMedium, "same-origin"},
 	}
 
 	for _, tt := range tests {
@@ -127,6 +128,7 @@ func TestCheckValueIgnoresBlankDuplicateOccurrence(t *testing.T) {
 		{"ContentTypeOptions", scanner.ContentTypeOptionsChecker{}, http.Header{"X-Content-Type-Options": {"nosniff", ""}}},
 		{"FrameOptions", scanner.FrameOptionsChecker{}, http.Header{"X-Frame-Options": {"DENY", ""}}},
 		{"ReferrerPolicy", scanner.ReferrerPolicyChecker{}, http.Header{"Referrer-Policy": {"strict-origin-when-cross-origin", ""}}},
+		{"CORP", scanner.CORPChecker{}, http.Header{"Cross-Origin-Resource-Policy": {"same-origin", ""}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -222,6 +224,39 @@ func TestReferrerPolicyWeakFallbackList(t *testing.T) {
 			}
 			if findings[0].Message == "" {
 				t.Error("Message is empty, want an explanation")
+			}
+		})
+	}
+}
+
+func TestCORPWeakValues(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"cross-origin opts out", "cross-origin"},
+		{"unrecognized value", "garbage"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			findings := scanner.CORPChecker{}.Check(http.Header{"Cross-Origin-Resource-Policy": {tt.value}})
+			if findings[0].Status != scanner.StatusWeak {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+			}
+			if findings[0].Message == "" {
+				t.Error("Message is empty, want an explanation")
+			}
+		})
+	}
+}
+
+func TestCORPAcceptsCaseInsensitiveValidValues(t *testing.T) {
+	tests := []string{"same-site", "SAME-SITE", "same-origin", "SAME-ORIGIN"}
+	for _, value := range tests {
+		t.Run(value, func(t *testing.T) {
+			findings := scanner.CORPChecker{}.Check(http.Header{"Cross-Origin-Resource-Policy": {value}})
+			if findings[0].Status != scanner.StatusPass {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
 			}
 		})
 	}
