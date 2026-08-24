@@ -8,7 +8,7 @@ import (
 
 // sarifSchemaURI pins the exact SARIF 2.1.0 schema document these reports
 // validate against, per oasis-tcs/sarif-spec.
-const sarifSchemaURI = "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/Schemata/sarif-schema-2.1.0.json"
+const sarifSchemaURI = "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json"
 
 type sarifLog struct {
 	Version string     `json:"version"`
@@ -77,22 +77,12 @@ func (SarifReporter) Report(findings []Finding, w io.Writer) error {
 		if f.Status == StatusPass {
 			continue
 		}
-		ruleID := sarifRuleID(f)
-		if !seenRules[ruleID] {
-			seenRules[ruleID] = true
-			driver.Rules = append(driver.Rules, sarifRule{
-				ID:               ruleID,
-				ShortDescription: sarifText{Text: sarifRuleDescription(f)},
-			})
+		rule, result := sarifRuleAndResult(f)
+		if !seenRules[rule.ID] {
+			seenRules[rule.ID] = true
+			driver.Rules = append(driver.Rules, rule)
 		}
-		results = append(results, sarifResult{
-			RuleID:  ruleID,
-			Level:   sarifLevel(f),
-			Message: sarifText{Text: sarifMessage(f)},
-			Locations: []sarifLocation{
-				{PhysicalLocation: sarifPhysicalLocation{ArtifactLocation: sarifArtifactLocation{URI: f.URL}}},
-			},
-		})
+		results = append(results, result)
 	}
 
 	log := sarifLog{
@@ -108,45 +98,44 @@ func (SarifReporter) Report(findings []Finding, w io.Writer) error {
 	return enc.Encode(log)
 }
 
-// sarifRuleID gives StatusError findings a fixed rule, since they carry no
-// Header to key off of — the scan itself failed before any header check ran.
-func sarifRuleID(f Finding) string {
+// sarifRuleAndResult builds the rule and result for a single non-pass
+// finding. StatusError findings carry no Header/Severity of their own — the
+// scan never got far enough to check headers — so they're branched on once
+// here rather than in each field separately: a fixed "scan-error" rule, and
+// a level of "error" since a failed scan is not merely a warning.
+func sarifRuleAndResult(f Finding) (sarifRule, sarifResult) {
+	var ruleID, description, message, level string
 	if f.Status == StatusError {
-		return "scan-error"
+		ruleID = "scan-error"
+		description = "The scan could not complete for this target."
+		message = f.Message
+		level = "error"
+	} else {
+		ruleID = f.Header
+		description = fmt.Sprintf("Checks the %s response header.", f.Header)
+		message = fmt.Sprintf("%s header is %s", f.Header, f.Status)
+		if f.Message != "" {
+			message += ": " + f.Message
+		}
+		level = sarifLevel(f.Severity)
 	}
-	return f.Header
+
+	rule := sarifRule{ID: ruleID, ShortDescription: sarifText{Text: description}}
+	result := sarifResult{
+		RuleID:  ruleID,
+		Level:   level,
+		Message: sarifText{Text: message},
+		Locations: []sarifLocation{
+			{PhysicalLocation: sarifPhysicalLocation{ArtifactLocation: sarifArtifactLocation{URI: f.URL}}},
+		},
+	}
+	return rule, result
 }
 
-func sarifRuleDescription(f Finding) string {
-	if f.Status == StatusError {
-		return "The scan could not complete for this target."
-	}
-	return fmt.Sprintf("Checks the %s response header.", f.Header)
-}
-
-// sarifMessage builds a self-contained message: a Missing/Weak finding's
-// Message field is often empty (see Finding.Message), so the status and
-// header are spelled out here rather than assuming the caller already knows
-// what triggered the result.
-func sarifMessage(f Finding) string {
-	if f.Status == StatusError {
-		return f.Message
-	}
-	msg := fmt.Sprintf("%s header is %s", f.Header, f.Status)
-	if f.Message != "" {
-		msg += ": " + f.Message
-	}
-	return msg
-}
-
-// sarifLevel maps Severity to a SARIF result level; a StatusError finding has
-// no Severity of its own (the scan never got far enough to check headers) so
-// it always reports as "error" — a failed scan is not merely a warning.
-func sarifLevel(f Finding) string {
-	if f.Status == StatusError {
-		return "error"
-	}
-	switch f.Severity {
+// sarifLevel maps Severity to a SARIF result level, per the low->note,
+// medium->warning, high->error scheme.
+func sarifLevel(s Severity) string {
+	switch s {
 	case SeverityLow:
 		return "note"
 	case SeverityHigh:
