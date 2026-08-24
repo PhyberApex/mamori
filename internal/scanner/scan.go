@@ -51,7 +51,7 @@ func Scan(ctx context.Context, client *http.Client, checkers []Checker, bodyChec
 // same as before body checks existed.
 func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, bodyCheckers []BodyChecker, url string) []Finding {
 	var headers http.Header
-	var findings []Finding
+	var bodyFindings []Finding
 
 	if len(bodyCheckers) == 0 {
 		h, err := fetchHeaders(ctx, client, url)
@@ -59,17 +59,16 @@ func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, bo
 			return []Finding{{URL: url, Status: StatusError, Message: err.Error()}}
 		}
 		headers = h
-		findings = RunAll(checkers, headers)
 	} else {
 		h, body, err := fetchBody(ctx, client, url)
 		if err != nil {
 			return []Finding{{URL: url, Status: StatusError, Message: err.Error()}}
 		}
 		headers = h
-		findings = RunAll(checkers, headers)
-		findings = append(findings, RunAllBody(bodyCheckers, body, url)...)
+		bodyFindings = RunAllBody(bodyCheckers, body, url)
 	}
 
+	findings := append(RunAll(checkers, headers), bodyFindings...)
 	for i := range findings {
 		findings[i].URL = url
 	}

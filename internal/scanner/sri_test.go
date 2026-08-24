@@ -16,6 +16,7 @@ func TestSRICheckerFlagsCrossOriginWithoutIntegrity(t *testing.T) {
 		{"script src", `<script src="https://cdn.example.net/app.js"></script>`},
 		{"link stylesheet href", `<link rel="stylesheet" href="https://cdn.example.net/app.css">`},
 		{"protocol-relative URL", `<script src="//cdn.example.net/app.js"></script>`},
+		{"link with multiple rel tokens", `<link rel="preload stylesheet" href="https://cdn.example.net/app.css">`},
 		{"blank integrity treated as missing", `<script src="https://cdn.example.net/app.js" integrity=""></script>`},
 	}
 

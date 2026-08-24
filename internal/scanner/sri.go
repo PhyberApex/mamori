@@ -75,7 +75,7 @@ func sriFinding(n *html.Node, base *url.URL) *Finding {
 	case "script":
 		attrName = "src"
 	case "link":
-		if !hasAttrValue(n, "rel", "stylesheet") {
+		if !hasRelValue(n, "stylesheet") {
 			return nil
 		}
 		attrName = "href"
@@ -130,7 +130,18 @@ func hasAttr(n *html.Node, key string) bool {
 	return ok && strings.TrimSpace(v) != ""
 }
 
-func hasAttrValue(n *html.Node, key, want string) bool {
-	v, ok := attrValue(n, key)
-	return ok && strings.EqualFold(strings.TrimSpace(v), want)
+// hasRelValue reports whether want is one of the link's rel keywords: rel is
+// spec'd as a space-separated token list (e.g. rel="preload stylesheet"), not
+// a single value, so an exact-string match would miss valid stylesheet links.
+func hasRelValue(n *html.Node, want string) bool {
+	v, ok := attrValue(n, "rel")
+	if !ok {
+		return false
+	}
+	for _, token := range strings.Fields(v) {
+		if strings.EqualFold(token, want) {
+			return true
+		}
+	}
+	return false
 }
