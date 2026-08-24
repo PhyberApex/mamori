@@ -22,11 +22,12 @@ func TestRunAllFansOutAcrossDefaultCheckers(t *testing.T) {
 	// itself a finding) and the expected count/map below is unaffected by
 	// its inclusion in DefaultCheckers().
 	want := map[string]scanner.Status{
-		"Strict-Transport-Security": scanner.StatusMissing,
-		"X-Content-Type-Options":    scanner.StatusMissing,
-		"X-Frame-Options":           scanner.StatusMissing,
-		"Content-Security-Policy":   scanner.StatusPass,
-		"Referrer-Policy":           scanner.StatusMissing,
+		"Strict-Transport-Security":  scanner.StatusMissing,
+		"X-Content-Type-Options":     scanner.StatusMissing,
+		"X-Frame-Options":            scanner.StatusMissing,
+		"Content-Security-Policy":    scanner.StatusPass,
+		"Referrer-Policy":            scanner.StatusMissing,
+		"Cross-Origin-Opener-Policy": scanner.StatusMissing,
 	}
 	if len(findings) != len(want) {
 		t.Fatalf("RunAll() returned %d findings, want %d", len(findings), len(want))

@@ -20,6 +20,7 @@ func TestCheckersIdentity(t *testing.T) {
 		{scanner.FrameOptionsChecker{}, "X-Frame-Options", scanner.SeverityMedium, "DENY"},
 		{scanner.CSPChecker{}, "Content-Security-Policy", scanner.SeverityHigh, "default-src 'self'"},
 		{scanner.ReferrerPolicyChecker{}, "Referrer-Policy", scanner.SeverityLow, "strict-origin-when-cross-origin"},
+		{scanner.COOPChecker{}, "Cross-Origin-Opener-Policy", scanner.SeverityMedium, "same-origin"},
 	}
 
 	for _, tt := range tests {
@@ -127,6 +128,7 @@ func TestCheckValueIgnoresBlankDuplicateOccurrence(t *testing.T) {
 		{"ContentTypeOptions", scanner.ContentTypeOptionsChecker{}, http.Header{"X-Content-Type-Options": {"nosniff", ""}}},
 		{"FrameOptions", scanner.FrameOptionsChecker{}, http.Header{"X-Frame-Options": {"DENY", ""}}},
 		{"ReferrerPolicy", scanner.ReferrerPolicyChecker{}, http.Header{"Referrer-Policy": {"strict-origin-when-cross-origin", ""}}},
+		{"COOP", scanner.COOPChecker{}, http.Header{"Cross-Origin-Opener-Policy": {"same-origin", ""}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -222,6 +224,33 @@ func TestReferrerPolicyWeakFallbackList(t *testing.T) {
 			}
 			if findings[0].Message == "" {
 				t.Error("Message is empty, want an explanation")
+			}
+		})
+	}
+}
+
+func TestCOOPWeakValues(t *testing.T) {
+	tests := []string{"unsafe-none", "UNSAFE-NONE", "garbage"}
+	for _, value := range tests {
+		t.Run(value, func(t *testing.T) {
+			findings := scanner.COOPChecker{}.Check(http.Header{"Cross-Origin-Opener-Policy": {value}})
+			if findings[0].Status != scanner.StatusWeak {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+			}
+			if findings[0].Message == "" {
+				t.Error("Message is empty, want an explanation")
+			}
+		})
+	}
+}
+
+func TestCOOPAcceptsCaseInsensitiveValidValues(t *testing.T) {
+	tests := []string{"same-origin", "SAME-ORIGIN", "same-origin-allow-popups", "SAME-ORIGIN-ALLOW-POPUPS"}
+	for _, value := range tests {
+		t.Run(value, func(t *testing.T) {
+			findings := scanner.COOPChecker{}.Check(http.Header{"Cross-Origin-Opener-Policy": {value}})
+			if findings[0].Status != scanner.StatusPass {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
 			}
 		})
 	}

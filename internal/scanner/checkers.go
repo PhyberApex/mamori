@@ -18,6 +18,7 @@ func DefaultCheckers() []Checker {
 		FrameOptionsChecker{},
 		CSPChecker{},
 		ReferrerPolicyChecker{},
+		COOPChecker{},
 		CookieChecker{},
 	}
 }
@@ -173,6 +174,30 @@ func effectiveReferrerPolicy(value string) string {
 		}
 	}
 	return effective
+}
+
+type COOPChecker struct{}
+
+func (COOPChecker) Check(headers http.Header) []Finding {
+	return checkValue(
+		headers,
+		"Cross-Origin-Opener-Policy",
+		SeverityMedium,
+		"https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cross-Origin-Opener-Policy",
+		coopWeakness,
+	)
+}
+
+// coopWeakness flags unsafe-none, the spec's default, and any unrecognized
+// value: both leave the page unisolated, sharing its browsing context group
+// with cross-origin popups/openers. same-origin-allow-popups and
+// same-origin are both accepted, since either provides real isolation.
+func coopWeakness(value string) (weak bool, message string) {
+	trimmed := strings.TrimSpace(value)
+	if strings.EqualFold(trimmed, "same-origin") || strings.EqualFold(trimmed, "same-origin-allow-popups") {
+		return false, ""
+	}
+	return true, fmt.Sprintf("%q does not isolate the browsing context from cross-origin popups/openers", value)
 }
 
 const cookieReference = "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html"

@@ -12,11 +12,12 @@ import (
 )
 
 var allSecurityHeaders = map[string]string{
-	"Strict-Transport-Security": "max-age=63072000",
-	"X-Content-Type-Options":    "nosniff",
-	"X-Frame-Options":           "DENY",
-	"Content-Security-Policy":   "default-src 'self'",
-	"Referrer-Policy":           "no-referrer",
+	"Strict-Transport-Security":  "max-age=63072000",
+	"X-Content-Type-Options":     "nosniff",
+	"X-Frame-Options":            "DENY",
+	"Content-Security-Policy":    "default-src 'self'",
+	"Referrer-Policy":            "no-referrer",
+	"Cross-Origin-Opener-Policy": "same-origin",
 }
 
 func scanOne(t *testing.T, handler http.Handler) []scanner.Finding {
@@ -25,8 +26,8 @@ func scanOne(t *testing.T, handler http.Handler) []scanner.Finding {
 	t.Cleanup(srv.Close)
 
 	findings := scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), []string{srv.URL}, 1)
-	if len(findings) != 5 {
-		t.Fatalf("Scan() returned %d findings, want 5", len(findings))
+	if len(findings) != 6 {
+		t.Fatalf("Scan() returned %d findings, want 6", len(findings))
 	}
 	for _, f := range findings {
 		if f.URL != srv.URL {
@@ -79,8 +80,8 @@ func TestScanCoversMultipleURLs(t *testing.T) {
 	t.Cleanup(srvB.Close)
 
 	findings := scanner.Scan(t.Context(), srvA.Client(), scanner.DefaultCheckers(), []string{srvA.URL, srvB.URL}, 2)
-	if len(findings) != 10 {
-		t.Fatalf("Scan() returned %d findings, want 10 (5 per URL)", len(findings))
+	if len(findings) != 12 {
+		t.Fatalf("Scan() returned %d findings, want 12 (6 per URL)", len(findings))
 	}
 }
 
@@ -145,8 +146,8 @@ func TestScanReportsAllTargetsDespiteFailures(t *testing.T) {
 	if got := len(byURL[deadURL]); got != 1 {
 		t.Errorf("dead target has %d findings, want 1 error finding", got)
 	}
-	if got := len(byURL[healthy.URL]); got != 5 {
-		t.Errorf("healthy target has %d findings, want 5", got)
+	if got := len(byURL[healthy.URL]); got != 6 {
+		t.Errorf("healthy target has %d findings, want 6", got)
 	}
 }
 
@@ -165,8 +166,8 @@ func TestScanRunsTargetsConcurrently(t *testing.T) {
 	findings := scanner.Scan(t.Context(), client, scanner.DefaultCheckers(), urls, targets)
 
 	assertAllStatus(t, findings, scanner.StatusMissing)
-	if len(findings) != targets*5 {
-		t.Fatalf("Scan() returned %d findings, want %d", len(findings), targets*5)
+	if len(findings) != targets*6 {
+		t.Fatalf("Scan() returned %d findings, want %d", len(findings), targets*6)
 	}
 }
 

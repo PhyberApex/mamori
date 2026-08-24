@@ -4,8 +4,8 @@ A concurrent API security scanner built in Go
 
 `mamori` scans one or more HTTP(S) endpoints for missing or misconfigured
 security headers (HSTS, CSP, `X-Frame-Options`, `X-Content-Type-Options`,
-`Referrer-Policy`) and reports the findings, with each missing header linked
-to guidance on how to fix it.
+`Referrer-Policy`, `Cross-Origin-Opener-Policy`) and reports the findings,
+with each missing header linked to guidance on how to fix it.
 
 ## Install
 
@@ -54,6 +54,7 @@ https://example.com
   [MISSING] X-Frame-Options (medium) → https://cheatsheetseries.owasp.org/cheatsheets/Clickjacking_Defense_Cheat_Sheet.html
   [MISSING] Content-Security-Policy (high) → https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html
   [MISSING] Referrer-Policy (low) → https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html#referrer-policy
+  [MISSING] Cross-Origin-Opener-Policy (medium) → https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cross-Origin-Opener-Policy
 ```
 
 Full reference for every check mamori performs is available at
