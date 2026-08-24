@@ -11,3 +11,4 @@ header_pages:
   - checks/content-security-policy.md
   - checks/referrer-policy.md
   - checks/set-cookie.md
+  - checks/permissions-policy.md

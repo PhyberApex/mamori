@@ -19,6 +19,7 @@ func DefaultCheckers() []Checker {
 		CSPChecker{},
 		ReferrerPolicyChecker{},
 		CookieChecker{},
+		PermissionsPolicyChecker{},
 		BannerDisclosureChecker{},
 	}
 }
@@ -114,12 +115,52 @@ func frameOptionsWeakness(value string) (weak bool, message string) {
 type CSPChecker struct{}
 
 func (CSPChecker) Check(headers http.Header) []Finding {
-	return checkPresence(
+	return checkValue(
 		headers,
 		"Content-Security-Policy",
 		SeverityHigh,
 		"https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html",
+		cspWeakness,
 	)
+}
+
+// cspWeakness flags a CSP value that's present but provides little real
+// protection: 'unsafe-inline'/'unsafe-eval' in any directive re-enable the
+// exact inline-script and string-to-code execution CSP exists to block, a
+// bare "*" source allows loading that content from any origin, and a policy
+// with neither object-src nor default-src leaves plugin content (e.g.
+// Flash/PDF embeds) completely unrestricted — object-src falls back to
+// default-src per spec, so only missing both is a gap.
+func cspWeakness(value string) (weak bool, message string) {
+	hasObjectSrc := false
+	hasDefaultSrc := false
+	for _, directive := range strings.Split(value, ";") {
+		fields := strings.Fields(directive)
+		if len(fields) == 0 {
+			continue
+		}
+		name := strings.ToLower(fields[0])
+		switch name {
+		case "object-src":
+			hasObjectSrc = true
+		case "default-src":
+			hasDefaultSrc = true
+		}
+		for _, source := range fields[1:] {
+			switch strings.ToLower(source) {
+			case "'unsafe-inline'":
+				return true, fmt.Sprintf("%s allows 'unsafe-inline', which permits inline scripts/styles and defeats CSP's XSS protection", name)
+			case "'unsafe-eval'":
+				return true, fmt.Sprintf("%s allows 'unsafe-eval', which permits string-to-code execution (eval, Function, etc.)", name)
+			case "*":
+				return true, fmt.Sprintf("%s allows * as a source, permitting content from any origin", name)
+			}
+		}
+	}
+	if !hasObjectSrc && !hasDefaultSrc {
+		return true, "missing both object-src and default-src, leaving plugin/legacy content unrestricted"
+	}
+	return false, ""
 }
 
 type ReferrerPolicyChecker struct{}
@@ -234,6 +275,17 @@ func cookieFindings(cookie *http.Cookie) []Finding {
 		})
 	}
 	return findings
+}
+
+type PermissionsPolicyChecker struct{}
+
+func (PermissionsPolicyChecker) Check(headers http.Header) []Finding {
+	return checkPresence(
+		headers,
+		"Permissions-Policy",
+		SeverityMedium,
+		"https://owasp.org/www-project-secure-headers/#permissions-policy",
+	)
 }
 
 const bannerDisclosureReference = "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html"
