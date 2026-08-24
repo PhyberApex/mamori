@@ -56,6 +56,7 @@ func Scan(ctx context.Context, client *http.Client, checkers []Checker, bodyChec
 }
 
 func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, bodyCheckers []BodyChecker, target string) []Finding {
+	//nolint:bodyclose // fallback's body, when non-nil, is closed by bodyFindings below, which takes ownership of it
 	headers, fallback, err := fetchHeaders(ctx, client, target)
 	if err != nil {
 		return []Finding{{URL: target, Status: StatusError, Message: err.Error()}}
