@@ -19,6 +19,7 @@ func DefaultCheckers() []Checker {
 		CSPChecker{},
 		ReferrerPolicyChecker{},
 		CookieChecker{},
+		PermissionsPolicyChecker{},
 	}
 }
 
@@ -233,6 +234,17 @@ func cookieFindings(cookie *http.Cookie) []Finding {
 		})
 	}
 	return findings
+}
+
+type PermissionsPolicyChecker struct{}
+
+func (PermissionsPolicyChecker) Check(headers http.Header) []Finding {
+	return checkPresence(
+		headers,
+		"Permissions-Policy",
+		SeverityMedium,
+		"https://owasp.org/www-project-secure-headers/#permissions-policy",
+	)
 }
 
 func checkPresence(headers http.Header, name string, severity Severity, reference string) []Finding {
