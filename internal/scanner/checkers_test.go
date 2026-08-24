@@ -590,3 +590,31 @@ func TestCORSIgnoresBlankDuplicateOccurrence(t *testing.T) {
 		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
 	}
 }
+
+func TestCORSDifferentCasedCredentialsValueProducesNoFindings(t *testing.T) {
+	// Per the Fetch spec's CORS check, a browser only honors
+	// Access-Control-Allow-Credentials when its value is byte-exactly "true";
+	// a server sending "True" isn't actually exploitable, so it shouldn't be
+	// flagged as one.
+	findings := scanner.CORSChecker{}.Check(http.Header{
+		"Access-Control-Allow-Origin":      {scanner.CORSProbeOrigin},
+		"Access-Control-Allow-Credentials": {"True"},
+	})
+	if len(findings) != 0 {
+		t.Errorf("Check() with Access-Control-Allow-Credentials: True returned %d findings, want 0: %+v", len(findings), findings)
+	}
+}
+
+func TestCORSDifferentCasedReflectedOriginProducesNoFindings(t *testing.T) {
+	// Per the Fetch spec's CORS check, a browser only accepts a reflected
+	// origin that byte-exactly matches the request's serialized origin; a
+	// server that reflects it back with different casing isn't actually
+	// exploitable, so it shouldn't be flagged as one.
+	findings := scanner.CORSChecker{}.Check(http.Header{
+		"Access-Control-Allow-Origin":      {strings.ToUpper(scanner.CORSProbeOrigin)},
+		"Access-Control-Allow-Credentials": {"true"},
+	})
+	if len(findings) != 0 {
+		t.Errorf("Check() on a different-cased reflected origin returned %d findings, want 0: %+v", len(findings), findings)
+	}
+}

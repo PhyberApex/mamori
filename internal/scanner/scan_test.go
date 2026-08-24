@@ -245,6 +245,35 @@ func TestScanNoCORSHeadersProducesNoCORSFinding(t *testing.T) {
 	}
 }
 
+func TestScanSkipsFailedProbeRatherThanErroringTarget(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Origin") != "" {
+			<-release
+			return
+		}
+		for name, value := range allSecurityHeaders {
+			w.Header().Set(name, value)
+		}
+	}))
+	t.Cleanup(func() {
+		close(release)
+		srv.Close()
+	})
+
+	client := &http.Client{Timeout: 50 * time.Millisecond}
+	findings := scanner.Scan(t.Context(), client, scanner.DefaultCheckers(), []string{srv.URL}, 1)
+
+	if len(findings) == 0 {
+		t.Fatal("Scan() returned no findings, want the plain request's findings despite the probe request failing")
+	}
+	for _, f := range findings {
+		if f.Status == scanner.StatusError {
+			t.Errorf("got error finding %+v, want the failed probe request skipped rather than erroring the whole target", f)
+		}
+	}
+}
+
 func TestScanPreservesTargetOrder(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	t.Cleanup(srv.Close)

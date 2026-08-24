@@ -358,11 +358,17 @@ const corsReference = "https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Secu
 type CORSChecker struct{}
 
 func (CORSChecker) Check(headers http.Header) []Finding {
+	// Both comparisons below are byte-exact, not case-insensitive: per the
+	// Fetch spec's CORS check, a browser only honors a reflected origin that
+	// matches the serialized request origin exactly, and only honors
+	// Access-Control-Allow-Credentials when its value is exactly "true". A
+	// server that replies with different casing isn't actually exploitable
+	// through a real browser, so flagging it would be a false positive.
 	acao := firstNonBlankValue(headers, "Access-Control-Allow-Origin")
-	if acao != "*" && !strings.EqualFold(acao, CORSProbeOrigin) {
+	if acao != "*" && acao != CORSProbeOrigin {
 		return nil
 	}
-	if !strings.EqualFold(firstNonBlankValue(headers, "Access-Control-Allow-Credentials"), "true") {
+	if firstNonBlankValue(headers, "Access-Control-Allow-Credentials") != "true" {
 		return nil
 	}
 	return []Finding{{
