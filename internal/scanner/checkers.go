@@ -19,6 +19,7 @@ func DefaultCheckers() []Checker {
 		CSPChecker{},
 		ReferrerPolicyChecker{},
 		CookieChecker{},
+		BannerDisclosureChecker{},
 	}
 }
 
@@ -230,6 +231,45 @@ func cookieFindings(cookie *http.Cookie) []Finding {
 			Severity:  attr.severity,
 			Reference: cookieReference,
 			Message:   fmt.Sprintf("cookie %q %s", cookie.Name, attr.message),
+		})
+	}
+	return findings
+}
+
+const bannerDisclosureReference = "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html"
+
+// bannerHeaders lists the headers BannerDisclosureChecker judges. Unlike the
+// other checkers, presence rather than absence is the finding: both headers
+// exist only to advertise backend software/version info, which is useful to
+// an attacker fingerprinting the stack and useful to nobody else.
+var bannerHeaders = []struct {
+	name      string
+	reference string
+}{
+	{"Server", bannerDisclosureReference + "#server"},
+	{"X-Powered-By", bannerDisclosureReference + "#x-powered-by"},
+}
+
+// BannerDisclosureChecker flags the Server and X-Powered-By headers whenever
+// they carry a value. There's no StatusPass/StatusMissing case here: absence
+// is the desired state and isn't itself worth reporting, so a response with
+// neither header produces no findings at all, mirroring how CookieChecker
+// treats a response with no cookies as having nothing to protect.
+type BannerDisclosureChecker struct{}
+
+func (BannerDisclosureChecker) Check(headers http.Header) []Finding {
+	var findings []Finding
+	for _, h := range bannerHeaders {
+		value := strings.TrimSpace(headers.Get(h.name))
+		if value == "" {
+			continue
+		}
+		findings = append(findings, Finding{
+			Header:    h.name,
+			Status:    StatusWeak,
+			Severity:  SeverityLow,
+			Reference: h.reference,
+			Message:   fmt.Sprintf("%q reveals backend software/version info useful for fingerprinting the server", value),
 		})
 	}
 	return findings
