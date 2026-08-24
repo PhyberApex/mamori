@@ -95,7 +95,7 @@ func fetchHeaders(ctx context.Context, client *http.Client, url string) (http.He
 // Origin header so a CORS-misconfigured server reveals itself in the
 // response.
 func fetchOriginProbeHeaders(ctx context.Context, client *http.Client, url string) (http.Header, error) {
-	return fetchHeadersWithOrigin(ctx, client, url, corsProbeOrigin)
+	return fetchHeadersWithOrigin(ctx, client, url, CORSProbeOrigin)
 }
 
 func fetchHeadersWithOrigin(ctx context.Context, client *http.Client, url, origin string) (http.Header, error) {

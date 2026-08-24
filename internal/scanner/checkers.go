@@ -316,20 +316,17 @@ func (BannerDisclosureChecker) Check(headers http.Header) []Finding {
 		// header instead of leaving the origin's alone; headers.Get would
 		// only ever see whichever occurrence happens to be first and could
 		// miss a later, disclosing one. Report the first non-blank value.
-		for _, raw := range headers.Values(name) {
-			value := strings.TrimSpace(raw)
-			if value == "" {
-				continue
-			}
-			findings = append(findings, Finding{
-				Header:    name,
-				Status:    StatusWeak,
-				Severity:  SeverityLow,
-				Reference: bannerDisclosureReference,
-				Message:   fmt.Sprintf("%q reveals backend software/version info useful for fingerprinting the server", value),
-			})
-			break
+		value := firstNonBlankValue(headers, name)
+		if value == "" {
+			continue
 		}
+		findings = append(findings, Finding{
+			Header:    name,
+			Status:    StatusWeak,
+			Severity:  SeverityLow,
+			Reference: bannerDisclosureReference,
+			Message:   fmt.Sprintf("%q reveals backend software/version info useful for fingerprinting the server", value),
+		})
 	}
 	return findings
 }
@@ -340,12 +337,13 @@ func (BannerDisclosureChecker) Check(headers http.Header) []Finding {
 // useful to an attacker fingerprinting the stack and useful to nobody else.
 var bannerHeaderNames = []string{"Server", "X-Powered-By"}
 
-// corsProbeOrigin is the synthetic, definitely-foreign origin Scan sends as
+// CORSProbeOrigin is the synthetic, definitely-foreign origin Scan sends as
 // the Origin header of the extra probe request CORSChecker needs (see
 // OriginProber). Any Access-Control-Allow-Origin that reflects it back, or a
 // bare "*", is telling literally any origin on the internet it may read the
-// response.
-const corsProbeOrigin = "https://mamori-cors-probe.invalid"
+// response. Exported so callers (and tests) that need to recognize a
+// reflected probe origin don't have to duplicate the literal.
+const CORSProbeOrigin = "https://mamori-cors-probe.invalid"
 
 const corsReference = "https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html#cross-origin-resource-sharing"
 
@@ -361,7 +359,7 @@ type CORSChecker struct{}
 
 func (CORSChecker) Check(headers http.Header) []Finding {
 	acao := firstNonBlankValue(headers, "Access-Control-Allow-Origin")
-	if acao != "*" && !strings.EqualFold(acao, corsProbeOrigin) {
+	if acao != "*" && !strings.EqualFold(acao, CORSProbeOrigin) {
 		return nil
 	}
 	if !strings.EqualFold(firstNonBlankValue(headers, "Access-Control-Allow-Credentials"), "true") {

@@ -491,8 +491,6 @@ func TestBannerDisclosureFlagsValueBehindBlankDuplicateOccurrence(t *testing.T) 
 	}
 }
 
-const corsProbeOrigin = "https://mamori-cors-probe.invalid"
-
 func TestCORSNoAccessControlHeadersProducesNoFindings(t *testing.T) {
 	findings := scanner.CORSChecker{}.Check(http.Header{})
 	if len(findings) != 0 {
@@ -502,7 +500,7 @@ func TestCORSNoAccessControlHeadersProducesNoFindings(t *testing.T) {
 
 func TestCORSFlagsReflectedOriginWithCredentials(t *testing.T) {
 	findings := scanner.CORSChecker{}.Check(http.Header{
-		"Access-Control-Allow-Origin":      {corsProbeOrigin},
+		"Access-Control-Allow-Origin":      {scanner.CORSProbeOrigin},
 		"Access-Control-Allow-Credentials": {"true"},
 	})
 	if len(findings) != 1 {
@@ -552,7 +550,7 @@ func TestCORSBareWildcardWithoutCredentialsProducesNoFindings(t *testing.T) {
 
 func TestCORSReflectedOriginWithoutCredentialsProducesNoFindings(t *testing.T) {
 	findings := scanner.CORSChecker{}.Check(http.Header{
-		"Access-Control-Allow-Origin": {corsProbeOrigin},
+		"Access-Control-Allow-Origin": {scanner.CORSProbeOrigin},
 	})
 	if len(findings) != 0 {
 		t.Errorf("Check() on reflected origin with no credentials returned %d findings, want 0: %+v", len(findings), findings)
@@ -573,7 +571,7 @@ func TestCORSSpecificAllowedOriginWithCredentialsProducesNoFindings(t *testing.T
 
 func TestCORSCredentialsFalseProducesNoFindings(t *testing.T) {
 	findings := scanner.CORSChecker{}.Check(http.Header{
-		"Access-Control-Allow-Origin":      {corsProbeOrigin},
+		"Access-Control-Allow-Origin":      {scanner.CORSProbeOrigin},
 		"Access-Control-Allow-Credentials": {"false"},
 	})
 	if len(findings) != 0 {
@@ -585,7 +583,7 @@ func TestCORSIgnoresBlankDuplicateOccurrence(t *testing.T) {
 	// Mirrors the other checkers' handling of a stray blank duplicate header
 	// appended by misconfigured infra instead of leaving the origin's alone.
 	findings := scanner.CORSChecker{}.Check(http.Header{
-		"Access-Control-Allow-Origin":      {"", corsProbeOrigin},
+		"Access-Control-Allow-Origin":      {"", scanner.CORSProbeOrigin},
 		"Access-Control-Allow-Credentials": {"", "true"},
 	})
 	if len(findings) != 1 {
