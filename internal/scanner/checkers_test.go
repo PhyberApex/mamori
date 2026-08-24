@@ -21,6 +21,7 @@ func TestCheckersIdentity(t *testing.T) {
 		{scanner.CSPChecker{}, "Content-Security-Policy", scanner.SeverityHigh, "default-src 'self'"},
 		{scanner.ReferrerPolicyChecker{}, "Referrer-Policy", scanner.SeverityLow, "strict-origin-when-cross-origin"},
 		{scanner.COOPChecker{}, "Cross-Origin-Opener-Policy", scanner.SeverityMedium, "same-origin"},
+		{scanner.PermissionsPolicyChecker{}, "Permissions-Policy", scanner.SeverityMedium, "geolocation=()"},
 	}
 
 	for _, tt := range tests {

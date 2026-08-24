@@ -16,3 +16,4 @@ Each check mamori performs is documented here. Every finding includes a link to 
 | `Referrer-Policy` | low | [docs](checks/referrer-policy) |
 | `Cross-Origin-Opener-Policy` | medium | [docs](checks/cross-origin-opener-policy) |
 | `Set-Cookie` | high / medium | [docs](checks/set-cookie) |
+| `Permissions-Policy` | medium | [docs](checks/permissions-policy) |

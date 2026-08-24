@@ -12,3 +12,4 @@ header_pages:
   - checks/referrer-policy.md
   - checks/cross-origin-opener-policy.md
   - checks/set-cookie.md
+  - checks/permissions-policy.md
