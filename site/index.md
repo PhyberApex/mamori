@@ -10,6 +10,7 @@ Each check mamori performs is documented here. Every finding includes a link to 
 | Header | Severity | Reference |
 |---|---|---|
 | `Strict-Transport-Security` | high | [docs](checks/strict-transport-security) |
+| `Strict-Transport-Security` (preload) | low | [docs](checks/hsts-preload) |
 | `X-Content-Type-Options` | medium | [docs](checks/x-content-type-options) |
 | `X-Frame-Options` | medium | [docs](checks/x-frame-options) |
 | `Content-Security-Policy` | high | [docs](checks/content-security-policy) |

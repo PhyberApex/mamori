@@ -140,6 +140,88 @@ func TestCheckValueIgnoresBlankDuplicateOccurrence(t *testing.T) {
 	}
 }
 
+func TestHSTSPreloadSkipsWhenBaseHSTSDoesNotPass(t *testing.T) {
+	tests := []struct {
+		name    string
+		headers http.Header
+	}{
+		{"missing header", http.Header{}},
+		{"zero max-age", http.Header{"Strict-Transport-Security": {"max-age=0; includeSubDomains; preload"}}},
+		{"unparseable max-age", http.Header{"Strict-Transport-Security": {"max-age=notanumber; includeSubDomains; preload"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			findings := scanner.HSTSPreloadChecker{}.Check(tt.headers)
+			if len(findings) != 0 {
+				t.Errorf("Check() returned %d findings, want 0 (HSTSChecker doesn't pass): %+v", len(findings), findings)
+			}
+		})
+	}
+}
+
+func TestHSTSPreloadFlagsMissingDirectives(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"missing both directives", "max-age=63072000"},
+		{"missing preload", "max-age=63072000; includeSubDomains"},
+		{"missing includeSubDomains", "max-age=63072000; preload"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			findings := scanner.HSTSPreloadChecker{}.Check(http.Header{"Strict-Transport-Security": {tt.value}})
+			if len(findings) != 1 {
+				t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
+			}
+			if findings[0].Header != "Strict-Transport-Security (preload)" {
+				t.Errorf("Header = %q, want %q", findings[0].Header, "Strict-Transport-Security (preload)")
+			}
+			if findings[0].Status != scanner.StatusWeak {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+			}
+			if findings[0].Message == "" {
+				t.Error("Message is empty, want an explanation")
+			}
+			if findings[0].Reference == "" {
+				t.Error("Reference is empty, want a docs URL")
+			}
+		})
+	}
+}
+
+func TestHSTSPreloadAcceptsBothDirectives(t *testing.T) {
+	findings := scanner.HSTSPreloadChecker{}.Check(http.Header{
+		"Strict-Transport-Security": {"max-age=63072000; includeSubDomains; preload"},
+	})
+	if len(findings) != 1 {
+		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
+	}
+	if findings[0].Status != scanner.StatusPass {
+		t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
+	}
+}
+
+func TestHSTSPreloadHeaderLabelDoesNotCollideWithHSTS(t *testing.T) {
+	headers := http.Header{"Strict-Transport-Security": {"max-age=63072000"}}
+	hsts := scanner.HSTSChecker{}.Check(headers)
+	preload := scanner.HSTSPreloadChecker{}.Check(headers)
+	if hsts[0].Header == preload[0].Header {
+		t.Errorf("HSTS and preload findings share Header %q, want distinct labels", hsts[0].Header)
+	}
+}
+
+func TestHSTSPreloadFlagsWeakAmongDuplicateHeaders(t *testing.T) {
+	headers := http.Header{"Strict-Transport-Security": {
+		"max-age=63072000; includeSubDomains; preload",
+		"max-age=63072000",
+	}}
+	findings := scanner.HSTSPreloadChecker{}.Check(headers)
+	if findings[0].Status != scanner.StatusWeak {
+		t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+	}
+}
+
 func TestContentTypeOptionsWeakValues(t *testing.T) {
 	tests := []string{"garbage", "sniff"}
 	for _, value := range tests {

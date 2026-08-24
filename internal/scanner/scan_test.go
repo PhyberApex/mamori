@@ -12,7 +12,7 @@ import (
 )
 
 var allSecurityHeaders = map[string]string{
-	"Strict-Transport-Security": "max-age=63072000",
+	"Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
 	"X-Content-Type-Options":    "nosniff",
 	"X-Frame-Options":           "DENY",
 	"Content-Security-Policy":   "default-src 'self'",
@@ -20,14 +20,14 @@ var allSecurityHeaders = map[string]string{
 	"Permissions-Policy":        "geolocation=()",
 }
 
-func scanOne(t *testing.T, handler http.Handler) []scanner.Finding {
+func scanOne(t *testing.T, handler http.Handler, want int) []scanner.Finding {
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 
 	findings := scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, []string{srv.URL}, 1)
-	if len(findings) != 6 {
-		t.Fatalf("Scan() returned %d findings, want 6", len(findings))
+	if len(findings) != want {
+		t.Fatalf("Scan() returned %d findings, want %d", len(findings), want)
 	}
 	for _, f := range findings {
 		if f.URL != srv.URL {
@@ -51,12 +51,12 @@ func TestScanAllHeadersPresent(t *testing.T) {
 		for name, value := range allSecurityHeaders {
 			w.Header().Set(name, value)
 		}
-	}))
+	}), 7)
 	assertAllStatus(t, findings, scanner.StatusPass)
 }
 
 func TestScanAllHeadersMissing(t *testing.T) {
-	findings := scanOne(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	findings := scanOne(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), 6)
 	assertAllStatus(t, findings, scanner.StatusMissing)
 }
 
@@ -69,7 +69,7 @@ func TestScanFallsBackToGETWhenHEADRejected(t *testing.T) {
 		for name, value := range allSecurityHeaders {
 			w.Header().Set(name, value)
 		}
-	}))
+	}), 7)
 	assertAllStatus(t, findings, scanner.StatusPass)
 }
 

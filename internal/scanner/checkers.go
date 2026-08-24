@@ -14,6 +14,7 @@ type Checker interface {
 func DefaultCheckers() []Checker {
 	return []Checker{
 		HSTSChecker{},
+		HSTSPreloadChecker{},
 		ContentTypeOptionsChecker{},
 		FrameOptionsChecker{},
 		CSPChecker{},
@@ -64,6 +65,68 @@ func hstsWeakness(value string) (weak bool, message string) {
 		return false, ""
 	}
 	return true, "max-age directive is missing"
+}
+
+const hstsPreloadHeaderLabel = "Strict-Transport-Security (preload)"
+
+// HSTSPreloadChecker evaluates eligibility for browsers' HSTS preload lists,
+// which requires includeSubDomains and preload directives on top of the
+// valid, positive max-age HSTSChecker already demands. It only evaluates
+// targets where HSTSChecker passes: a missing or self-defeating max-age is
+// HSTSChecker's finding to make, not this one's, and re-flagging the same
+// root cause under a second header would just be noise. It reports under a
+// distinct Header label so the two findings never collide when both are
+// present for the same response.
+type HSTSPreloadChecker struct{}
+
+func (HSTSPreloadChecker) Check(headers http.Header) []Finding {
+	if base := (HSTSChecker{}).Check(headers); base[0].Status != StatusPass {
+		return nil
+	}
+	finding := Finding{
+		Header:    hstsPreloadHeaderLabel,
+		Status:    StatusPass,
+		Severity:  SeverityLow,
+		Reference: "https://hstspreload.org/",
+	}
+	for _, value := range headers.Values("Strict-Transport-Security") {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if weak, message := hstsPreloadWeakness(value); weak {
+			finding.Status = StatusWeak
+			finding.Message = message
+			break
+		}
+	}
+	return []Finding{finding}
+}
+
+// hstsPreloadWeakness flags an HSTS value missing includeSubDomains or
+// preload: both are required for a domain to be accepted onto browsers'
+// built-in HSTS preload lists, even though the header is otherwise fully
+// functional per hstsWeakness.
+func hstsPreloadWeakness(value string) (weak bool, message string) {
+	hasIncludeSubDomains := false
+	hasPreload := false
+	for _, directive := range strings.Split(value, ";") {
+		switch strings.ToLower(strings.TrimSpace(directive)) {
+		case "includesubdomains":
+			hasIncludeSubDomains = true
+		case "preload":
+			hasPreload = true
+		}
+	}
+	switch {
+	case !hasIncludeSubDomains && !hasPreload:
+		return true, "missing both includeSubDomains and preload directives, so it is not eligible for HSTS preload lists"
+	case !hasIncludeSubDomains:
+		return true, "missing the includeSubDomains directive, so it is not eligible for HSTS preload lists"
+	case !hasPreload:
+		return true, "missing the preload directive, so it is not eligible for HSTS preload lists"
+	}
+	return false, ""
 }
 
 type ContentTypeOptionsChecker struct{}
