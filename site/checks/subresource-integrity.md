@@ -22,7 +22,7 @@ Cross-origin resources should carry an `integrity` attribute with a hash of the 
 
 ## What mamori checks
 
-Fetches and parses the response body with the standard HTML parser, then inspects every `<script>` and `<link rel="stylesheet">` tag. A tag is flagged as a low-severity `WEAK` finding when its resource URL resolves to a different origin (scheme, host, or port) than the page itself and it has no `integrity` attribute (or a blank one). Same-origin resources are not flagged — they're served by the site itself and conventionally don't need SRI.
+Fetches and parses the response body with Go's HTML parser, then inspects every `<script>` and `<link rel="stylesheet">` tag. A tag is flagged as a low-severity `WEAK` finding when its resource URL resolves to a different origin (scheme, host, or port) than the page itself and it has no `integrity` attribute (or a blank one). Same-origin resources are not flagged — they're served by the site itself and conventionally don't need SRI.
 
 ## Further reading
 

@@ -52,20 +52,19 @@ func Scan(ctx context.Context, client *http.Client, checkers []Checker, bodyChec
 func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, bodyCheckers []BodyChecker, url string) []Finding {
 	var headers http.Header
 	var bodyFindings []Finding
+	var err error
 
 	if len(bodyCheckers) == 0 {
-		h, err := fetchHeaders(ctx, client, url)
-		if err != nil {
-			return []Finding{{URL: url, Status: StatusError, Message: err.Error()}}
-		}
-		headers = h
+		headers, err = fetchHeaders(ctx, client, url)
 	} else {
-		h, body, err := fetchBody(ctx, client, url)
-		if err != nil {
-			return []Finding{{URL: url, Status: StatusError, Message: err.Error()}}
+		var body []byte
+		headers, body, err = fetchBody(ctx, client, url)
+		if err == nil {
+			bodyFindings = RunAllBody(bodyCheckers, body, url)
 		}
-		headers = h
-		bodyFindings = RunAllBody(bodyCheckers, body, url)
+	}
+	if err != nil {
+		return []Finding{{URL: url, Status: StatusError, Message: err.Error()}}
 	}
 
 	findings := append(RunAll(checkers, headers), bodyFindings...)
@@ -89,6 +88,12 @@ func fetchHeaders(ctx context.Context, client *http.Client, url string) (http.He
 	return headers, nil
 }
 
+// maxBodyBytes caps how much of a response body fetchBody will buffer, so a
+// hostile or misconfigured target can't exhaust memory by returning an
+// unbounded body. Body checkers only look at the head of the document
+// (script/link tags), so a truncated body still yields usable findings.
+const maxBodyBytes = 10 * 1024 * 1024 // 10 MiB
+
 // fetchBody always issues a GET, since body checkers need the body itself
 // and there's no cheaper request that would provide it.
 func fetchBody(ctx context.Context, client *http.Client, url string) (http.Header, []byte, error) {
@@ -102,7 +107,7 @@ func fetchBody(ctx context.Context, client *http.Client, url string) (http.Heade
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
 	if err != nil {
 		return nil, nil, err
 	}
