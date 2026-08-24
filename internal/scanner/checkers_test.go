@@ -126,6 +126,7 @@ func TestCheckValueIgnoresBlankDuplicateOccurrence(t *testing.T) {
 		{"HSTS", scanner.HSTSChecker{}, http.Header{"Strict-Transport-Security": {"max-age=63072000", ""}}},
 		{"ContentTypeOptions", scanner.ContentTypeOptionsChecker{}, http.Header{"X-Content-Type-Options": {"nosniff", ""}}},
 		{"FrameOptions", scanner.FrameOptionsChecker{}, http.Header{"X-Frame-Options": {"DENY", ""}}},
+		{"CSP", scanner.CSPChecker{}, http.Header{"Content-Security-Policy": {"default-src 'self'", ""}}},
 		{"ReferrerPolicy", scanner.ReferrerPolicyChecker{}, http.Header{"Referrer-Policy": {"strict-origin-when-cross-origin", ""}}},
 	}
 	for _, tt := range tests {
@@ -222,6 +223,46 @@ func TestReferrerPolicyWeakFallbackList(t *testing.T) {
 			}
 			if findings[0].Message == "" {
 				t.Error("Message is empty, want an explanation")
+			}
+		})
+	}
+}
+
+func TestCSPWeakValues(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"unsafe-inline in script-src", "default-src 'self'; script-src 'unsafe-inline'; object-src 'none'"},
+		{"unsafe-eval in script-src", "default-src 'self'; script-src 'unsafe-eval'; object-src 'none'"},
+		{"unsafe-inline case-insensitive", "default-src 'self'; script-src 'UNSAFE-INLINE'; object-src 'none'"},
+		{"bare wildcard source", "default-src 'self'; img-src *; object-src 'none'"},
+		{"missing object-src and default-src", "script-src 'self'"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			findings := scanner.CSPChecker{}.Check(http.Header{"Content-Security-Policy": {tt.value}})
+			if findings[0].Status != scanner.StatusWeak {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+			}
+			if findings[0].Message == "" {
+				t.Error("Message is empty, want an explanation")
+			}
+		})
+	}
+}
+
+func TestCSPAcceptsStrongValues(t *testing.T) {
+	tests := []string{
+		"default-src 'self'",
+		"object-src 'none'; script-src 'self'",
+		"default-src 'self'; img-src https://*.example.com",
+	}
+	for _, value := range tests {
+		t.Run(value, func(t *testing.T) {
+			findings := scanner.CSPChecker{}.Check(http.Header{"Content-Security-Policy": {value}})
+			if findings[0].Status != scanner.StatusPass {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
 			}
 		})
 	}
