@@ -25,7 +25,7 @@ func scanOne(t *testing.T, handler http.Handler) []scanner.Finding {
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 
-	findings := scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), []string{srv.URL}, 1)
+	findings := scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, []string{srv.URL}, 1)
 	if len(findings) != 6 {
 		t.Fatalf("Scan() returned %d findings, want 6", len(findings))
 	}
@@ -73,13 +73,63 @@ func TestScanFallsBackToGETWhenHEADRejected(t *testing.T) {
 	assertAllStatus(t, findings, scanner.StatusPass)
 }
 
+func TestScanSkipsBodyFetchWhenNoBodyCheckersConfigured(t *testing.T) {
+	var gotMethod string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+	}))
+	t.Cleanup(srv.Close)
+
+	scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, []string{srv.URL}, 1)
+	if gotMethod != http.MethodHead {
+		t.Errorf("request method = %q, want %q (HEAD should be tried first when no body checkers are configured)", gotMethod, http.MethodHead)
+	}
+}
+
+func TestScanRunsBodyCheckersWhenConfigured(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<script src="https://cdn.example.net/app.js"></script>`))
+	}))
+	t.Cleanup(srv.Close)
+
+	findings := scanner.Scan(t.Context(), srv.Client(), nil, scanner.DefaultBodyCheckers(), []string{srv.URL}, 1)
+	if len(findings) != 1 {
+		t.Fatalf("Scan() returned %d findings, want 1", len(findings))
+	}
+	f := findings[0]
+	if f.Status != scanner.StatusWeak {
+		t.Errorf("Status = %q, want %q", f.Status, scanner.StatusWeak)
+	}
+	if f.URL != srv.URL {
+		t.Errorf("URL = %q, want %q", f.URL, srv.URL)
+	}
+}
+
+func TestScanCombinesHeaderAndBodyCheckerFindings(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		_, _ = w.Write([]byte(`<script src="https://cdn.example.net/app.js"></script>`))
+	}))
+	t.Cleanup(srv.Close)
+
+	findings := scanner.Scan(t.Context(), srv.Client(), []scanner.Checker{scanner.ContentTypeOptionsChecker{}}, scanner.DefaultBodyCheckers(), []string{srv.URL}, 1)
+	if len(findings) != 2 {
+		t.Fatalf("Scan() returned %d findings, want 2 (1 header + 1 body)", len(findings))
+	}
+	for _, f := range findings {
+		if f.URL != srv.URL {
+			t.Errorf("finding %s has URL %q, want %q", f.Header, f.URL, srv.URL)
+		}
+	}
+}
+
 func TestScanCoversMultipleURLs(t *testing.T) {
 	srvA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	t.Cleanup(srvA.Close)
 	srvB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	t.Cleanup(srvB.Close)
 
-	findings := scanner.Scan(t.Context(), srvA.Client(), scanner.DefaultCheckers(), []string{srvA.URL, srvB.URL}, 2)
+	findings := scanner.Scan(t.Context(), srvA.Client(), scanner.DefaultCheckers(), nil, []string{srvA.URL, srvB.URL}, 2)
 	if len(findings) != 12 {
 		t.Fatalf("Scan() returned %d findings, want 12 (6 per URL)", len(findings))
 	}
@@ -90,7 +140,7 @@ func TestScanUnreachableTargetYieldsErrorFinding(t *testing.T) {
 	unreachable := srv.URL
 	srv.Close()
 
-	findings := scanner.Scan(t.Context(), http.DefaultClient, scanner.DefaultCheckers(), []string{unreachable}, 1)
+	findings := scanner.Scan(t.Context(), http.DefaultClient, scanner.DefaultCheckers(), nil, []string{unreachable}, 1)
 	if len(findings) != 1 {
 		t.Fatalf("Scan() returned %d findings, want 1 error finding", len(findings))
 	}
@@ -117,7 +167,7 @@ func TestScanServerTimeoutYieldsErrorFinding(t *testing.T) {
 	})
 
 	client := &http.Client{Timeout: 50 * time.Millisecond}
-	findings := scanner.Scan(t.Context(), client, scanner.DefaultCheckers(), []string{srv.URL}, 1)
+	findings := scanner.Scan(t.Context(), client, scanner.DefaultCheckers(), nil, []string{srv.URL}, 1)
 	if len(findings) != 1 {
 		t.Fatalf("Scan() returned %d findings, want 1 error finding", len(findings))
 	}
@@ -137,7 +187,7 @@ func TestScanReportsAllTargetsDespiteFailures(t *testing.T) {
 	deadURL := dead.URL
 	dead.Close()
 
-	findings := scanner.Scan(t.Context(), http.DefaultClient, scanner.DefaultCheckers(), []string{deadURL, healthy.URL}, 2)
+	findings := scanner.Scan(t.Context(), http.DefaultClient, scanner.DefaultCheckers(), nil, []string{deadURL, healthy.URL}, 2)
 
 	byURL := map[string][]scanner.Finding{}
 	for _, f := range findings {
@@ -163,7 +213,7 @@ func TestScanRunsTargetsConcurrently(t *testing.T) {
 
 	client := &http.Client{Timeout: 5 * time.Second}
 	urls := []string{srv.URL + "/a", srv.URL + "/b", srv.URL + "/c"}
-	findings := scanner.Scan(t.Context(), client, scanner.DefaultCheckers(), urls, targets)
+	findings := scanner.Scan(t.Context(), client, scanner.DefaultCheckers(), nil, urls, targets)
 
 	assertAllStatus(t, findings, scanner.StatusMissing)
 	if len(findings) != targets*6 {
@@ -194,7 +244,7 @@ func TestScanBoundsConcurrencyToPoolSize(t *testing.T) {
 	for i := range urls {
 		urls[i] = srv.URL + "/" + string(rune('a'+i))
 	}
-	scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), urls, workers)
+	scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, urls, workers)
 
 	if p := peak.Load(); p > workers {
 		t.Errorf("peak concurrent requests = %d, want at most %d", p, workers)
@@ -206,7 +256,7 @@ func TestScanPreservesTargetOrder(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	urls := []string{srv.URL + "/a", srv.URL + "/b", srv.URL + "/c"}
-	findings := scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), urls, 3)
+	findings := scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, urls, 3)
 
 	var seen []string
 	for _, f := range findings {
