@@ -407,3 +407,86 @@ func TestReferrerPolicyAcceptsFallbackListEndingStrong(t *testing.T) {
 		t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
 	}
 }
+
+func TestBannerDisclosureNoHeadersProducesNoFindings(t *testing.T) {
+	findings := scanner.BannerDisclosureChecker{}.Check(http.Header{})
+	if len(findings) != 0 {
+		t.Errorf("Check() on headers with no Server/X-Powered-By returned %d findings, want 0: %+v", len(findings), findings)
+	}
+}
+
+func TestBannerDisclosureFlagsServerHeader(t *testing.T) {
+	findings := scanner.BannerDisclosureChecker{}.Check(http.Header{"Server": {"nginx/1.18.0"}})
+	if len(findings) != 1 {
+		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
+	}
+	if findings[0].Header != "Server" {
+		t.Errorf("Header = %q, want %q", findings[0].Header, "Server")
+	}
+	if findings[0].Status != scanner.StatusWeak {
+		t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+	}
+	if findings[0].Severity != scanner.SeverityLow {
+		t.Errorf("Severity = %q, want %q", findings[0].Severity, scanner.SeverityLow)
+	}
+	if findings[0].Reference == "" {
+		t.Error("Reference is empty, want a docs URL")
+	}
+	if findings[0].Message == "" {
+		t.Error("Message is empty, want an explanation")
+	}
+}
+
+func TestBannerDisclosureFlagsXPoweredByHeader(t *testing.T) {
+	findings := scanner.BannerDisclosureChecker{}.Check(http.Header{"X-Powered-By": {"PHP/8.2.0"}})
+	if len(findings) != 1 {
+		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
+	}
+	if findings[0].Header != "X-Powered-By" {
+		t.Errorf("Header = %q, want %q", findings[0].Header, "X-Powered-By")
+	}
+	if findings[0].Status != scanner.StatusWeak {
+		t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+	}
+	if findings[0].Severity != scanner.SeverityLow {
+		t.Errorf("Severity = %q, want %q", findings[0].Severity, scanner.SeverityLow)
+	}
+}
+
+func TestBannerDisclosureFlagsBothHeaders(t *testing.T) {
+	findings := scanner.BannerDisclosureChecker{}.Check(http.Header{
+		"Server":       {"nginx/1.18.0"},
+		"X-Powered-By": {"PHP/8.2.0"},
+	})
+	if len(findings) != 2 {
+		t.Fatalf("Check() returned %d findings, want 2: %+v", len(findings), findings)
+	}
+}
+
+func TestBannerDisclosureIgnoresBlankHeaderValue(t *testing.T) {
+	findings := scanner.BannerDisclosureChecker{}.Check(http.Header{
+		"Server":       {""},
+		"X-Powered-By": {""},
+	})
+	if len(findings) != 0 {
+		t.Errorf("Check() with blank header values returned %d findings, want 0: %+v", len(findings), findings)
+	}
+}
+
+func TestBannerDisclosureFlagsValueBehindBlankDuplicateOccurrence(t *testing.T) {
+	// Some infra prepends a stray blank duplicate instead of leaving the
+	// origin's header alone. headers.Get would only see that blank first
+	// occurrence and miss the disclosing one behind it.
+	findings := scanner.BannerDisclosureChecker{}.Check(http.Header{
+		"Server": {"", "nginx/1.18.0"},
+	})
+	if len(findings) != 1 {
+		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
+	}
+	if findings[0].Status != scanner.StatusWeak {
+		t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+	}
+	if findings[0].Message == "" {
+		t.Error("Message is empty, want an explanation")
+	}
+}

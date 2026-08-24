@@ -20,6 +20,7 @@ func DefaultCheckers() []Checker {
 		ReferrerPolicyChecker{},
 		CookieChecker{},
 		PermissionsPolicyChecker{},
+		BannerDisclosureChecker{},
 	}
 }
 
@@ -286,6 +287,46 @@ func (PermissionsPolicyChecker) Check(headers http.Header) []Finding {
 		"https://owasp.org/www-project-secure-headers/#permissions-policy",
 	)
 }
+
+const bannerDisclosureReference = "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html"
+
+// BannerDisclosureChecker flags the Server and X-Powered-By headers whenever
+// they carry a value. There's no StatusPass/StatusMissing case here: absence
+// is the desired state and isn't itself worth reporting, so a response with
+// neither header produces no findings at all, mirroring how CookieChecker
+// treats a response with no cookies as having nothing to protect.
+type BannerDisclosureChecker struct{}
+
+func (BannerDisclosureChecker) Check(headers http.Header) []Finding {
+	var findings []Finding
+	for _, name := range bannerHeaderNames {
+		// A misconfigured proxy or CDN can append a blank duplicate of the
+		// header instead of leaving the origin's alone; headers.Get would
+		// only ever see whichever occurrence happens to be first and could
+		// miss a later, disclosing one. Report the first non-blank value.
+		for _, raw := range headers.Values(name) {
+			value := strings.TrimSpace(raw)
+			if value == "" {
+				continue
+			}
+			findings = append(findings, Finding{
+				Header:    name,
+				Status:    StatusWeak,
+				Severity:  SeverityLow,
+				Reference: bannerDisclosureReference,
+				Message:   fmt.Sprintf("%q reveals backend software/version info useful for fingerprinting the server", value),
+			})
+			break
+		}
+	}
+	return findings
+}
+
+// bannerHeaderNames lists the headers BannerDisclosureChecker judges. Unlike
+// the other checkers, presence rather than absence is the finding: both
+// headers exist only to advertise backend software/version info, which is
+// useful to an attacker fingerprinting the stack and useful to nobody else.
+var bannerHeaderNames = []string{"Server", "X-Powered-By"}
 
 func checkPresence(headers http.Header, name string, severity Severity, reference string) []Finding {
 	status := StatusPass
