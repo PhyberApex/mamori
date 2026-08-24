@@ -19,6 +19,7 @@ func DefaultCheckers() []Checker {
 		CSPChecker{},
 		ReferrerPolicyChecker{},
 		CookieChecker{},
+		PermissionsPolicyChecker{},
 	}
 }
 
@@ -173,6 +174,17 @@ func effectiveReferrerPolicy(value string) string {
 		}
 	}
 	return effective
+}
+
+type PermissionsPolicyChecker struct{}
+
+func (PermissionsPolicyChecker) Check(headers http.Header) []Finding {
+	return checkPresence(
+		headers,
+		"Permissions-Policy",
+		SeverityMedium,
+		"https://owasp.org/www-project-secure-headers/#permissions-policy",
+	)
 }
 
 const cookieReference = "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html"

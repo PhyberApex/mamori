@@ -17,6 +17,7 @@ func strongHeaders() map[string]string {
 		"X-Frame-Options":           "DENY",
 		"Content-Security-Policy":   "default-src 'self'",
 		"Referrer-Policy":           "strict-origin-when-cross-origin",
+		"Permissions-Policy":        "geolocation=()",
 	}
 }
 
