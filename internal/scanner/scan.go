@@ -67,20 +67,59 @@ func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, bo
 		return []Finding{{URL: url, Status: StatusError, Message: err.Error()}}
 	}
 
-	findings := append(RunAll(checkers, headers), bodyFindings...)
+	plain, originBased := splitOriginProbers(checkers)
+	findings := append(RunAll(plain, headers), bodyFindings...)
+
+	// Only pay for the extra request when a configured Checker actually
+	// needs it. A probe failure is skipped rather than turned into an error
+	// finding: the plain request above already succeeded, so one Checker's
+	// extra round trip failing shouldn't blank out everything else this
+	// target reported.
+	if len(originBased) > 0 {
+		if probeHeaders, err := fetchOriginProbeHeaders(ctx, client, url); err == nil {
+			findings = append(findings, RunAll(originBased, probeHeaders)...)
+		}
+	}
+
 	for i := range findings {
 		findings[i].URL = url
 	}
 	return findings
 }
 
+// splitOriginProbers separates checkers that judge the plain scan request
+// from OriginProber checkers that need the synthetic-Origin probe response
+// instead, so scanTarget only issues the extra request when one is present.
+func splitOriginProbers(checkers []Checker) (plain, originBased []Checker) {
+	for _, c := range checkers {
+		if _, ok := c.(OriginProber); ok {
+			originBased = append(originBased, c)
+			continue
+		}
+		plain = append(plain, c)
+	}
+	return plain, originBased
+}
+
 func fetchHeaders(ctx context.Context, client *http.Client, url string) (http.Header, error) {
-	headers, status, err := doRequest(ctx, client, http.MethodHead, url)
+	return fetchHeadersWithOrigin(ctx, client, url, "")
+}
+
+// fetchOriginProbeHeaders issues the extra request OriginProber checkers
+// need: identical to fetchHeaders, but carrying a synthetic cross-origin
+// Origin header so a CORS-misconfigured server reveals itself in the
+// response.
+func fetchOriginProbeHeaders(ctx context.Context, client *http.Client, url string) (http.Header, error) {
+	return fetchHeadersWithOrigin(ctx, client, url, CORSProbeOrigin)
+}
+
+func fetchHeadersWithOrigin(ctx context.Context, client *http.Client, url, origin string) (http.Header, error) {
+	headers, status, err := doRequest(ctx, client, http.MethodHead, url, origin)
 	if err != nil {
 		return nil, err
 	}
 	if status == http.StatusMethodNotAllowed || status == http.StatusNotImplemented {
-		headers, _, err = doRequest(ctx, client, http.MethodGet, url)
+		headers, _, err = doRequest(ctx, client, http.MethodGet, url, origin)
 		if err != nil {
 			return nil, err
 		}
@@ -114,10 +153,13 @@ func fetchBody(ctx context.Context, client *http.Client, url string) (http.Heade
 	return resp.Header, body, nil
 }
 
-func doRequest(ctx context.Context, client *http.Client, method, url string) (http.Header, int, error) {
+func doRequest(ctx context.Context, client *http.Client, method, url, origin string) (http.Header, int, error) {
 	req, err := http.NewRequestWithContext(ctx, method, url, http.NoBody)
 	if err != nil {
 		return nil, 0, err
+	}
+	if origin != "" {
+		req.Header.Set("Origin", origin)
 	}
 	resp, err := client.Do(req)
 	if err != nil {

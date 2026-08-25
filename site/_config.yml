@@ -13,3 +13,4 @@ header_pages:
   - checks/cross-origin-resource-policy.md
   - checks/set-cookie.md
   - checks/permissions-policy.md
+  - checks/cors.md
