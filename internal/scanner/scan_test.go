@@ -105,6 +105,25 @@ func TestScanRunsBodyCheckersWhenConfigured(t *testing.T) {
 	}
 }
 
+func TestScanFlagsMixedContentOnHTTPSTarget(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<img src="http://insecure.example.net/logo.png">`))
+	}))
+	t.Cleanup(srv.Close)
+
+	findings := scanner.Scan(t.Context(), srv.Client(), nil, scanner.DefaultBodyCheckers(), []string{srv.URL}, 1)
+	if len(findings) != 1 {
+		t.Fatalf("Scan() returned %d findings, want 1: %+v", len(findings), findings)
+	}
+	f := findings[0]
+	if f.Severity != scanner.SeverityMedium {
+		t.Errorf("Severity = %q, want %q", f.Severity, scanner.SeverityMedium)
+	}
+	if f.URL != srv.URL {
+		t.Errorf("URL = %q, want %q", f.URL, srv.URL)
+	}
+}
+
 func TestScanCombinesHeaderAndBodyCheckerFindings(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")

@@ -18,7 +18,7 @@ type BodyChecker interface {
 }
 
 func DefaultBodyCheckers() []BodyChecker {
-	return []BodyChecker{SRIChecker{}}
+	return []BodyChecker{SRIChecker{}, MixedContentChecker{}}
 }
 
 func RunAllBody(checkers []BodyChecker, body []byte, targetURL string) []Finding {
