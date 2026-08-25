@@ -347,14 +347,18 @@ const CORSProbeOrigin = "https://mamori-cors-probe.invalid"
 
 const corsReference = "https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html#cross-origin-resource-sharing"
 
-// CORSChecker flags the one CORS combination that's actually dangerous: an
-// Access-Control-Allow-Origin that accepts any origin — either by reflecting
-// back whatever Origin was sent, or a bare "*" — together with
-// Access-Control-Allow-Credentials: true. That pairing lets any site on the
-// internet read authenticated responses via a victim's browser. A bare
-// wildcard with no credentials, or a specific allow-listed origin that
-// doesn't match the probe's, is either intentionally permissive or already
-// origin-restricted, and isn't a finding on its own.
+// CORSChecker flags an Access-Control-Allow-Origin that accepts any origin —
+// either by reflecting back whatever Origin was sent, or a bare "*" —
+// together with Access-Control-Allow-Credentials: true. A reflected origin
+// is directly exploitable: it lets any site on the internet read
+// authenticated responses via a victim's browser. A bare wildcard is not —
+// per the Fetch spec's CORS check, a browser refuses to honor "*" on a
+// credentialed request at all — but it's still flagged at a lower severity,
+// since it signals a server that doesn't understand its own CORS policy and
+// offers no such protection to non-browser clients. A bare wildcard with no
+// credentials, or a specific allow-listed origin that doesn't match the
+// probe's, is either intentionally permissive or already origin-restricted,
+// and isn't a finding on its own.
 type CORSChecker struct{}
 
 func (CORSChecker) Check(headers http.Header) []Finding {
@@ -371,12 +375,29 @@ func (CORSChecker) Check(headers http.Header) []Finding {
 	if firstNonBlankValue(headers, "Access-Control-Allow-Credentials") != "true" {
 		return nil
 	}
+
+	if acao == CORSProbeOrigin {
+		return []Finding{{
+			Header:    "Access-Control-Allow-Origin",
+			Status:    StatusWeak,
+			Severity:  SeverityHigh,
+			Reference: corsReference,
+			Message:   fmt.Sprintf("%q together with Access-Control-Allow-Credentials: true lets any site read authenticated responses via a victim's browser", acao),
+		}}
+	}
+
+	// A literal "*" never reaches this severity via a spec-compliant
+	// browser: the Fetch spec's CORS check only accepts "*" when the
+	// request isn't credentialed, so a credentialed fetch against this
+	// response fails the check and no browser ever exposes it to
+	// cross-origin JS. Still a real misconfiguration worth surfacing, just
+	// not one with the same exploitability as a reflected origin.
 	return []Finding{{
 		Header:    "Access-Control-Allow-Origin",
 		Status:    StatusWeak,
-		Severity:  SeverityHigh,
+		Severity:  SeverityMedium,
 		Reference: corsReference,
-		Message:   fmt.Sprintf("%q together with Access-Control-Allow-Credentials: true lets any site read authenticated responses via a victim's browser", acao),
+		Message:   `"*" together with Access-Control-Allow-Credentials: true is a broken CORS configuration: compliant browsers won't honor the wildcard on a credentialed request, but non-browser clients enforce no such restriction`,
 	}}
 }
 

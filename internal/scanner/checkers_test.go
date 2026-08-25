@@ -525,6 +525,10 @@ func TestCORSFlagsReflectedOriginWithCredentials(t *testing.T) {
 }
 
 func TestCORSFlagsWildcardOriginWithCredentials(t *testing.T) {
+	// Unlike a reflected origin, a literal "*" is never honored by a
+	// spec-compliant browser on a credentialed request, so it's flagged at
+	// Medium rather than High: a real misconfiguration signal, but not
+	// directly exploitable via a browser the way a reflected origin is.
 	findings := scanner.CORSChecker{}.Check(http.Header{
 		"Access-Control-Allow-Origin":      {"*"},
 		"Access-Control-Allow-Credentials": {"true"},
@@ -534,6 +538,9 @@ func TestCORSFlagsWildcardOriginWithCredentials(t *testing.T) {
 	}
 	if findings[0].Status != scanner.StatusWeak {
 		t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+	}
+	if findings[0].Severity != scanner.SeverityMedium {
+		t.Errorf("Severity = %q, want %q", findings[0].Severity, scanner.SeverityMedium)
 	}
 }
 
