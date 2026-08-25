@@ -1,6 +1,8 @@
 package config_test
 
 import (
+	"net/http"
+	"reflect"
 	"testing"
 	"time"
 
@@ -137,6 +139,52 @@ func TestResolveRejectsUnknownOutputFlag(t *testing.T) {
 func TestResolveRejectsUnknownFailOnFlag(t *testing.T) {
 	if _, _, err := config.Resolve([]string{"-fail-on", "critical"}, noEnv); err == nil {
 		t.Error("Resolve() with -fail-on critical returned nil error, want error")
+	}
+}
+
+func TestResolveParsesRepeatableHeaderFlag(t *testing.T) {
+	cfg, _, err := config.Resolve(
+		[]string{"-H", "Authorization: Bearer xyz", "-H", "Cookie: session=abc", "https://a.example"},
+		noEnv,
+	)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	want := http.Header{
+		"Authorization": {"Bearer xyz"},
+		"Cookie":        {"session=abc"},
+	}
+	if got := http.Header(cfg.Headers); !reflect.DeepEqual(got, want) {
+		t.Errorf("Headers = %v, want %v", got, want)
+	}
+}
+
+func TestResolveHeaderFlagLastValueWinsForRepeatedKey(t *testing.T) {
+	cfg, _, err := config.Resolve(
+		[]string{"-H", "Authorization: first", "-H", "Authorization: second"},
+		noEnv,
+	)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if got := http.Header(cfg.Headers).Get("Authorization"); got != "second" {
+		t.Errorf("Authorization = %q, want %q (last -H wins)", got, "second")
+	}
+}
+
+func TestResolveRejectsMalformedHeaderFlag(t *testing.T) {
+	if _, _, err := config.Resolve([]string{"-H", "not-a-header"}, noEnv); err == nil {
+		t.Error("Resolve() with -H not-a-header returned nil error, want error")
+	}
+}
+
+func TestResolveDefaultsToNoHeaders(t *testing.T) {
+	cfg, _, err := config.Resolve(nil, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if len(cfg.Headers) != 0 {
+		t.Errorf("Headers = %v, want empty", cfg.Headers)
 	}
 }
 

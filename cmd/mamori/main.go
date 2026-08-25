@@ -65,7 +65,7 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 		return err
 	}
 	client := &http.Client{Timeout: cfg.Timeout}
-	findings := scanner.Scan(context.Background(), client, scanner.DefaultCheckers(), scanner.DefaultBodyCheckers(), urls, cfg.Workers)
+	findings := scanner.Scan(context.Background(), client, scanner.DefaultCheckers(), scanner.DefaultBodyCheckers(), urls, cfg.Workers, http.Header(cfg.Headers))
 	if err := reporterFor(cfg.Output).Report(findings, out); err != nil {
 		return err
 	}

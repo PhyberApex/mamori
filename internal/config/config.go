@@ -5,7 +5,10 @@ package config
 import (
 	"flag"
 	"fmt"
+	"net/http"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/PhyberApex/mamori/internal/scanner"
@@ -42,6 +45,47 @@ type Config struct {
 	// before resolving targets or scanning, mirroring flag.ErrHelp's -h
 	// short-circuit — neither validates the rest of Config first.
 	Version bool
+	// Headers holds the -H flags, applied to every scan request. The zero
+	// value (nil) is already the correct default: no extra headers.
+	Headers Headers
+}
+
+// Headers is http.Header under the flag package's Value contract: a defined
+// type so *Headers can carry String/Set methods, since those can't be added
+// to http.Header itself. -H is repeatable, so Set accumulates rather than
+// replacing on each call.
+type Headers http.Header
+
+// String and Set make *Headers satisfy flag.Value, the same hook Output and
+// FailOn use above. String renders back in the same "Key: Value" form Set
+// accepts, sorted for determinism, rather than Go's raw map syntax.
+func (h *Headers) String() string {
+	keys := make([]string, 0, len(*h))
+	for k := range *h {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, len(keys))
+	for i, k := range keys {
+		parts[i] = k + ": " + http.Header(*h).Get(k)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// Set parses a single curl-style "Key: Value" header. A key repeated across
+// multiple -H flags follows http.Header.Set's last-value-wins rule, matching
+// the "apply via req.Header.Set" behaviour the request path uses.
+func (h *Headers) Set(v string) error {
+	key, value, ok := strings.Cut(v, ":")
+	key = strings.TrimSpace(key)
+	if !ok || key == "" {
+		return fmt.Errorf("%q is not in \"Key: Value\" form", v)
+	}
+	if *h == nil {
+		*h = Headers{}
+	}
+	http.Header(*h).Set(key, strings.TrimSpace(value))
+	return nil
 }
 
 func parseOutput(v string) (Output, error) {
@@ -132,6 +176,7 @@ func registerFlags(cfg *Config) (*flag.FlagSet, *string) {
 	fs.Var(&cfg.FailOn, "fail-on", "exit non-zero on findings at or above this severity: low, medium, high, or none")
 	fs.BoolVar(&cfg.Version, "v", false, "print version and exit")
 	fs.BoolVar(&cfg.Version, "version", false, "print version and exit")
+	fs.Var(&cfg.Headers, "H", "custom request header 'Key: Value', e.g. -H 'Authorization: Bearer xyz' (repeatable)")
 	var configPath string
 	fs.StringVar(&configPath, "config", "", "path to YAML config file (env MAMORI_CONFIG; default: .mamori.yaml in the working directory if present)")
 	return fs, &configPath
