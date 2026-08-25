@@ -12,12 +12,13 @@ import (
 )
 
 var allSecurityHeaders = map[string]string{
-	"Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
-	"X-Content-Type-Options":    "nosniff",
-	"X-Frame-Options":           "DENY",
-	"Content-Security-Policy":   "default-src 'self'",
-	"Referrer-Policy":           "no-referrer",
-	"Permissions-Policy":        "geolocation=()",
+	"Strict-Transport-Security":    "max-age=63072000; includeSubDomains; preload",
+	"X-Content-Type-Options":       "nosniff",
+	"X-Frame-Options":              "DENY",
+	"Content-Security-Policy":      "default-src 'self'",
+	"Referrer-Policy":              "no-referrer",
+	"Cross-Origin-Resource-Policy": "same-origin",
+	"Permissions-Policy":           "geolocation=()",
 }
 
 func scanOne(t *testing.T, handler http.Handler, want int) []scanner.Finding {
@@ -51,12 +52,12 @@ func TestScanAllHeadersPresent(t *testing.T) {
 		for name, value := range allSecurityHeaders {
 			w.Header().Set(name, value)
 		}
-	}), 7)
+	}), 8)
 	assertAllStatus(t, findings, scanner.StatusPass)
 }
 
 func TestScanAllHeadersMissing(t *testing.T) {
-	findings := scanOne(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), 6)
+	findings := scanOne(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), 7)
 	assertAllStatus(t, findings, scanner.StatusMissing)
 }
 
@@ -69,7 +70,7 @@ func TestScanFallsBackToGETWhenHEADRejected(t *testing.T) {
 		for name, value := range allSecurityHeaders {
 			w.Header().Set(name, value)
 		}
-	}), 7)
+	}), 8)
 	assertAllStatus(t, findings, scanner.StatusPass)
 }
 
@@ -105,6 +106,25 @@ func TestScanRunsBodyCheckersWhenConfigured(t *testing.T) {
 	}
 }
 
+func TestScanFlagsMixedContentOnHTTPSTarget(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<img src="http://insecure.example.net/logo.png">`))
+	}))
+	t.Cleanup(srv.Close)
+
+	findings := scanner.Scan(t.Context(), srv.Client(), nil, scanner.DefaultBodyCheckers(), []string{srv.URL}, 1)
+	if len(findings) != 1 {
+		t.Fatalf("Scan() returned %d findings, want 1: %+v", len(findings), findings)
+	}
+	f := findings[0]
+	if f.Severity != scanner.SeverityMedium {
+		t.Errorf("Severity = %q, want %q", f.Severity, scanner.SeverityMedium)
+	}
+	if f.URL != srv.URL {
+		t.Errorf("URL = %q, want %q", f.URL, srv.URL)
+	}
+}
+
 func TestScanCombinesHeaderAndBodyCheckerFindings(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -130,8 +150,8 @@ func TestScanCoversMultipleURLs(t *testing.T) {
 	t.Cleanup(srvB.Close)
 
 	findings := scanner.Scan(t.Context(), srvA.Client(), scanner.DefaultCheckers(), nil, []string{srvA.URL, srvB.URL}, 2)
-	if len(findings) != 12 {
-		t.Fatalf("Scan() returned %d findings, want 12 (6 per URL)", len(findings))
+	if len(findings) != 14 {
+		t.Fatalf("Scan() returned %d findings, want 14 (7 per URL)", len(findings))
 	}
 }
 
@@ -196,8 +216,8 @@ func TestScanReportsAllTargetsDespiteFailures(t *testing.T) {
 	if got := len(byURL[deadURL]); got != 1 {
 		t.Errorf("dead target has %d findings, want 1 error finding", got)
 	}
-	if got := len(byURL[healthy.URL]); got != 6 {
-		t.Errorf("healthy target has %d findings, want 6", got)
+	if got := len(byURL[healthy.URL]); got != 7 {
+		t.Errorf("healthy target has %d findings, want 7", got)
 	}
 }
 
@@ -216,8 +236,8 @@ func TestScanRunsTargetsConcurrently(t *testing.T) {
 	findings := scanner.Scan(t.Context(), client, scanner.DefaultCheckers(), nil, urls, targets)
 
 	assertAllStatus(t, findings, scanner.StatusMissing)
-	if len(findings) != targets*6 {
-		t.Fatalf("Scan() returned %d findings, want %d", len(findings), targets*6)
+	if len(findings) != targets*7 {
+		t.Fatalf("Scan() returned %d findings, want %d", len(findings), targets*7)
 	}
 }
 
