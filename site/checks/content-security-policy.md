@@ -22,7 +22,14 @@ This only allows resources from the same origin. Most apps need to expand this f
 
 ## What mamori checks
 
-Presence of the header. A missing header is reported as a high-severity finding. mamori does not validate the CSP value — that requires understanding your application's intent.
+Presence of the header, and whether the value is a known no-op. A missing header is reported as a high-severity finding. A present header is flagged as weak if it:
+
+- allows `'unsafe-inline'` in any directive, which permits inline scripts/styles and defeats CSP's XSS protection
+- allows `'unsafe-eval'` in any directive, which permits string-to-code execution (`eval`, `Function`, etc.)
+- allows a bare `*` source, which permits loading that content from any origin
+- lacks both `object-src` and `default-src`, leaving plugin/legacy content unrestricted (`object-src` falls back to `default-src` per spec, so only missing both is a gap)
+
+Beyond these checks, CSP values are highly application-specific — mamori does not validate the full policy against your application's intent.
 
 ## Further reading
 

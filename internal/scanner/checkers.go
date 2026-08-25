@@ -20,6 +20,8 @@ func DefaultCheckers() []Checker {
 		ReferrerPolicyChecker{},
 		CORPChecker{},
 		CookieChecker{},
+		PermissionsPolicyChecker{},
+		BannerDisclosureChecker{},
 	}
 }
 
@@ -114,12 +116,52 @@ func frameOptionsWeakness(value string) (weak bool, message string) {
 type CSPChecker struct{}
 
 func (CSPChecker) Check(headers http.Header) []Finding {
-	return checkPresence(
+	return checkValue(
 		headers,
 		"Content-Security-Policy",
 		SeverityHigh,
 		"https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html",
+		cspWeakness,
 	)
+}
+
+// cspWeakness flags a CSP value that's present but provides little real
+// protection: 'unsafe-inline'/'unsafe-eval' in any directive re-enable the
+// exact inline-script and string-to-code execution CSP exists to block, a
+// bare "*" source allows loading that content from any origin, and a policy
+// with neither object-src nor default-src leaves plugin content (e.g.
+// Flash/PDF embeds) completely unrestricted — object-src falls back to
+// default-src per spec, so only missing both is a gap.
+func cspWeakness(value string) (weak bool, message string) {
+	hasObjectSrc := false
+	hasDefaultSrc := false
+	for _, directive := range strings.Split(value, ";") {
+		fields := strings.Fields(directive)
+		if len(fields) == 0 {
+			continue
+		}
+		name := strings.ToLower(fields[0])
+		switch name {
+		case "object-src":
+			hasObjectSrc = true
+		case "default-src":
+			hasDefaultSrc = true
+		}
+		for _, source := range fields[1:] {
+			switch strings.ToLower(source) {
+			case "'unsafe-inline'":
+				return true, fmt.Sprintf("%s allows 'unsafe-inline', which permits inline scripts/styles and defeats CSP's XSS protection", name)
+			case "'unsafe-eval'":
+				return true, fmt.Sprintf("%s allows 'unsafe-eval', which permits string-to-code execution (eval, Function, etc.)", name)
+			case "*":
+				return true, fmt.Sprintf("%s allows * as a source, permitting content from any origin", name)
+			}
+		}
+	}
+	if !hasObjectSrc && !hasDefaultSrc {
+		return true, "missing both object-src and default-src, leaving plugin/legacy content unrestricted"
+	}
+	return false, ""
 }
 
 type ReferrerPolicyChecker struct{}
@@ -262,6 +304,57 @@ func cookieFindings(cookie *http.Cookie) []Finding {
 	}
 	return findings
 }
+
+type PermissionsPolicyChecker struct{}
+
+func (PermissionsPolicyChecker) Check(headers http.Header) []Finding {
+	return checkPresence(
+		headers,
+		"Permissions-Policy",
+		SeverityMedium,
+		"https://owasp.org/www-project-secure-headers/#permissions-policy",
+	)
+}
+
+const bannerDisclosureReference = "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html"
+
+// BannerDisclosureChecker flags the Server and X-Powered-By headers whenever
+// they carry a value. There's no StatusPass/StatusMissing case here: absence
+// is the desired state and isn't itself worth reporting, so a response with
+// neither header produces no findings at all, mirroring how CookieChecker
+// treats a response with no cookies as having nothing to protect.
+type BannerDisclosureChecker struct{}
+
+func (BannerDisclosureChecker) Check(headers http.Header) []Finding {
+	var findings []Finding
+	for _, name := range bannerHeaderNames {
+		// A misconfigured proxy or CDN can append a blank duplicate of the
+		// header instead of leaving the origin's alone; headers.Get would
+		// only ever see whichever occurrence happens to be first and could
+		// miss a later, disclosing one. Report the first non-blank value.
+		for _, raw := range headers.Values(name) {
+			value := strings.TrimSpace(raw)
+			if value == "" {
+				continue
+			}
+			findings = append(findings, Finding{
+				Header:    name,
+				Status:    StatusWeak,
+				Severity:  SeverityLow,
+				Reference: bannerDisclosureReference,
+				Message:   fmt.Sprintf("%q reveals backend software/version info useful for fingerprinting the server", value),
+			})
+			break
+		}
+	}
+	return findings
+}
+
+// bannerHeaderNames lists the headers BannerDisclosureChecker judges. Unlike
+// the other checkers, presence rather than absence is the finding: both
+// headers exist only to advertise backend software/version info, which is
+// useful to an attacker fingerprinting the stack and useful to nobody else.
+var bannerHeaderNames = []string{"Server", "X-Powered-By"}
 
 func checkPresence(headers http.Header, name string, severity Severity, reference string) []Finding {
 	status := StatusPass

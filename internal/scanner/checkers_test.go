@@ -21,6 +21,7 @@ func TestCheckersIdentity(t *testing.T) {
 		{scanner.CSPChecker{}, "Content-Security-Policy", scanner.SeverityHigh, "default-src 'self'"},
 		{scanner.ReferrerPolicyChecker{}, "Referrer-Policy", scanner.SeverityLow, "strict-origin-when-cross-origin"},
 		{scanner.CORPChecker{}, "Cross-Origin-Resource-Policy", scanner.SeverityMedium, "same-origin"},
+		{scanner.PermissionsPolicyChecker{}, "Permissions-Policy", scanner.SeverityMedium, "geolocation=()"},
 	}
 
 	for _, tt := range tests {
@@ -127,6 +128,7 @@ func TestCheckValueIgnoresBlankDuplicateOccurrence(t *testing.T) {
 		{"HSTS", scanner.HSTSChecker{}, http.Header{"Strict-Transport-Security": {"max-age=63072000", ""}}},
 		{"ContentTypeOptions", scanner.ContentTypeOptionsChecker{}, http.Header{"X-Content-Type-Options": {"nosniff", ""}}},
 		{"FrameOptions", scanner.FrameOptionsChecker{}, http.Header{"X-Frame-Options": {"DENY", ""}}},
+		{"CSP", scanner.CSPChecker{}, http.Header{"Content-Security-Policy": {"default-src 'self'", ""}}},
 		{"ReferrerPolicy", scanner.ReferrerPolicyChecker{}, http.Header{"Referrer-Policy": {"strict-origin-when-cross-origin", ""}}},
 		{"CORP", scanner.CORPChecker{}, http.Header{"Cross-Origin-Resource-Policy": {"same-origin", ""}}},
 	}
@@ -250,11 +252,51 @@ func TestCORPWeakValues(t *testing.T) {
 	}
 }
 
+func TestCSPWeakValues(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"unsafe-inline in script-src", "default-src 'self'; script-src 'unsafe-inline'; object-src 'none'"},
+		{"unsafe-eval in script-src", "default-src 'self'; script-src 'unsafe-eval'; object-src 'none'"},
+		{"unsafe-inline case-insensitive", "default-src 'self'; script-src 'UNSAFE-INLINE'; object-src 'none'"},
+		{"bare wildcard source", "default-src 'self'; img-src *; object-src 'none'"},
+		{"missing object-src and default-src", "script-src 'self'"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			findings := scanner.CSPChecker{}.Check(http.Header{"Content-Security-Policy": {tt.value}})
+			if findings[0].Status != scanner.StatusWeak {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+			}
+			if findings[0].Message == "" {
+				t.Error("Message is empty, want an explanation")
+			}
+		})
+	}
+}
+
 func TestCORPAcceptsCaseInsensitiveValidValues(t *testing.T) {
 	tests := []string{"same-site", "SAME-SITE", "same-origin", "SAME-ORIGIN"}
 	for _, value := range tests {
 		t.Run(value, func(t *testing.T) {
 			findings := scanner.CORPChecker{}.Check(http.Header{"Cross-Origin-Resource-Policy": {value}})
+			if findings[0].Status != scanner.StatusPass {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
+			}
+		})
+	}
+}
+
+func TestCSPAcceptsStrongValues(t *testing.T) {
+	tests := []string{
+		"default-src 'self'",
+		"object-src 'none'; script-src 'self'",
+		"default-src 'self'; img-src https://*.example.com",
+	}
+	for _, value := range tests {
+		t.Run(value, func(t *testing.T) {
+			findings := scanner.CSPChecker{}.Check(http.Header{"Content-Security-Policy": {value}})
 			if findings[0].Status != scanner.StatusPass {
 				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
 			}
@@ -398,5 +440,88 @@ func TestReferrerPolicyAcceptsFallbackListEndingStrong(t *testing.T) {
 	})
 	if findings[0].Status != scanner.StatusPass {
 		t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
+	}
+}
+
+func TestBannerDisclosureNoHeadersProducesNoFindings(t *testing.T) {
+	findings := scanner.BannerDisclosureChecker{}.Check(http.Header{})
+	if len(findings) != 0 {
+		t.Errorf("Check() on headers with no Server/X-Powered-By returned %d findings, want 0: %+v", len(findings), findings)
+	}
+}
+
+func TestBannerDisclosureFlagsServerHeader(t *testing.T) {
+	findings := scanner.BannerDisclosureChecker{}.Check(http.Header{"Server": {"nginx/1.18.0"}})
+	if len(findings) != 1 {
+		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
+	}
+	if findings[0].Header != "Server" {
+		t.Errorf("Header = %q, want %q", findings[0].Header, "Server")
+	}
+	if findings[0].Status != scanner.StatusWeak {
+		t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+	}
+	if findings[0].Severity != scanner.SeverityLow {
+		t.Errorf("Severity = %q, want %q", findings[0].Severity, scanner.SeverityLow)
+	}
+	if findings[0].Reference == "" {
+		t.Error("Reference is empty, want a docs URL")
+	}
+	if findings[0].Message == "" {
+		t.Error("Message is empty, want an explanation")
+	}
+}
+
+func TestBannerDisclosureFlagsXPoweredByHeader(t *testing.T) {
+	findings := scanner.BannerDisclosureChecker{}.Check(http.Header{"X-Powered-By": {"PHP/8.2.0"}})
+	if len(findings) != 1 {
+		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
+	}
+	if findings[0].Header != "X-Powered-By" {
+		t.Errorf("Header = %q, want %q", findings[0].Header, "X-Powered-By")
+	}
+	if findings[0].Status != scanner.StatusWeak {
+		t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+	}
+	if findings[0].Severity != scanner.SeverityLow {
+		t.Errorf("Severity = %q, want %q", findings[0].Severity, scanner.SeverityLow)
+	}
+}
+
+func TestBannerDisclosureFlagsBothHeaders(t *testing.T) {
+	findings := scanner.BannerDisclosureChecker{}.Check(http.Header{
+		"Server":       {"nginx/1.18.0"},
+		"X-Powered-By": {"PHP/8.2.0"},
+	})
+	if len(findings) != 2 {
+		t.Fatalf("Check() returned %d findings, want 2: %+v", len(findings), findings)
+	}
+}
+
+func TestBannerDisclosureIgnoresBlankHeaderValue(t *testing.T) {
+	findings := scanner.BannerDisclosureChecker{}.Check(http.Header{
+		"Server":       {""},
+		"X-Powered-By": {""},
+	})
+	if len(findings) != 0 {
+		t.Errorf("Check() with blank header values returned %d findings, want 0: %+v", len(findings), findings)
+	}
+}
+
+func TestBannerDisclosureFlagsValueBehindBlankDuplicateOccurrence(t *testing.T) {
+	// Some infra prepends a stray blank duplicate instead of leaving the
+	// origin's header alone. headers.Get would only see that blank first
+	// occurrence and miss the disclosing one behind it.
+	findings := scanner.BannerDisclosureChecker{}.Check(http.Header{
+		"Server": {"", "nginx/1.18.0"},
+	})
+	if len(findings) != 1 {
+		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
+	}
+	if findings[0].Status != scanner.StatusWeak {
+		t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+	}
+	if findings[0].Message == "" {
+		t.Error("Message is empty, want an explanation")
 	}
 }
