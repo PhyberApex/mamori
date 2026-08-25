@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -130,6 +133,41 @@ func TestRunFailOnEnvVar(t *testing.T) {
 	err := run([]string{url}, nil, io.Discard)
 	if !errors.Is(err, errFailThreshold) {
 		t.Errorf("run() with MAMORI_FAIL_ON=low returned %v, want errFailThreshold", err)
+	}
+}
+
+func TestRunEmitsSarifOutput(t *testing.T) {
+	url := headerServer(t, nil) // every header missing
+
+	var buf bytes.Buffer
+	if err := run([]string{"-o", "sarif", url}, nil, &buf); err != nil {
+		t.Fatalf("run() with -o sarif returned %v, want nil", err)
+	}
+
+	var doc struct {
+		Version string `json:"version"`
+		Runs    []struct {
+			Results []struct {
+				RuleID string `json:"ruleId"`
+			} `json:"results"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &doc); err != nil {
+		t.Fatalf("output is not valid JSON: %v\noutput:\n%s", err, buf.String())
+	}
+	if doc.Version != "2.1.0" {
+		t.Errorf("version = %q, want %q", doc.Version, "2.1.0")
+	}
+	if len(doc.Runs) != 1 || len(doc.Runs[0].Results) == 0 {
+		t.Fatalf("got no SARIF results for a scan with missing headers\noutput:\n%s", buf.String())
+	}
+}
+
+func TestRunRejectsUnknownOutputFormat(t *testing.T) {
+	url := headerServer(t, strongHeaders())
+	err := run([]string{"-o", "xml", url}, nil, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "not a known output format") {
+		t.Errorf("run() with -o xml returned %v, want a known-output-format error", err)
 	}
 }
 

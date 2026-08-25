@@ -18,3 +18,4 @@ Each check mamori performs is documented here. Every finding includes a link to 
 | `Permissions-Policy` | medium | [docs](checks/permissions-policy) |
 | `Server` / `X-Powered-By` | low | [docs](checks/banner-disclosure) |
 | `/.well-known/security.txt` | low | [docs](checks/security-txt) |
+| `<script>` / `<link>` (SRI) | low | [docs](checks/subresource-integrity) |
