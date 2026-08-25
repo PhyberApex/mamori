@@ -18,6 +18,7 @@ func DefaultCheckers() []Checker {
 		FrameOptionsChecker{},
 		CSPChecker{},
 		ReferrerPolicyChecker{},
+		COOPChecker{},
 		CORPChecker{},
 		CookieChecker{},
 		PermissionsPolicyChecker{},
@@ -228,6 +229,33 @@ func effectiveReferrerPolicy(value string) string {
 		}
 	}
 	return effective
+}
+
+type COOPChecker struct{}
+
+func (COOPChecker) Check(headers http.Header) []Finding {
+	return checkValue(
+		headers,
+		"Cross-Origin-Opener-Policy",
+		SeverityMedium,
+		"https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cross-Origin-Opener-Policy",
+		coopWeakness,
+	)
+}
+
+// coopWeakness flags unsafe-none, the default that provides no isolation
+// from cross-origin openers/popups, and any value the spec doesn't define,
+// which browsers don't recognize and so also provides no isolation — same
+// treatment as a missing header in both cases.
+func coopWeakness(value string) (weak bool, message string) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "same-origin", "same-origin-allow-popups", "noopener-allow-popups":
+		return false, ""
+	case "unsafe-none":
+		return true, "unsafe-none is the default and provides no isolation from cross-origin openers/popups"
+	default:
+		return true, fmt.Sprintf("%q is not a recognized Cross-Origin-Opener-Policy value and provides no isolation", value)
+	}
 }
 
 type CORPChecker struct{}

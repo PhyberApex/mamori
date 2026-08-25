@@ -27,6 +27,7 @@ func TestRunAllFansOutAcrossDefaultCheckers(t *testing.T) {
 		"X-Frame-Options":              scanner.StatusMissing,
 		"Content-Security-Policy":      scanner.StatusPass,
 		"Referrer-Policy":              scanner.StatusMissing,
+		"Cross-Origin-Opener-Policy":   scanner.StatusMissing,
 		"Cross-Origin-Resource-Policy": scanner.StatusMissing,
 		"Permissions-Policy":           scanner.StatusMissing,
 	}
