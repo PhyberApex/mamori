@@ -18,6 +18,7 @@ func DefaultCheckers() []Checker {
 		FrameOptionsChecker{},
 		CSPChecker{},
 		ReferrerPolicyChecker{},
+		CORPChecker{},
 		CookieChecker{},
 		PermissionsPolicyChecker{},
 		BannerDisclosureChecker{},
@@ -215,6 +216,33 @@ func effectiveReferrerPolicy(value string) string {
 		}
 	}
 	return effective
+}
+
+type CORPChecker struct{}
+
+func (CORPChecker) Check(headers http.Header) []Finding {
+	return checkValue(
+		headers,
+		"Cross-Origin-Resource-Policy",
+		SeverityMedium,
+		"https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cross-Origin-Resource-Policy",
+		corpWeakness,
+	)
+}
+
+// corpWeakness flags cross-origin, which explicitly opts back out of the
+// protection this header exists to provide, and any value the spec doesn't
+// define, which browsers don't recognize and so also provides no
+// protection — same treatment as a missing header in both cases.
+func corpWeakness(value string) (weak bool, message string) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "same-site", "same-origin":
+		return false, ""
+	case "cross-origin":
+		return true, "cross-origin opts out of cross-origin resource protection"
+	default:
+		return true, fmt.Sprintf("%q is not same-site, same-origin, or cross-origin and provides no protection", value)
+	}
 }
 
 const cookieReference = "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html"

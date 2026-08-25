@@ -14,6 +14,7 @@ Each check mamori performs is documented here. Every finding includes a link to 
 | `X-Frame-Options` | medium | [docs](checks/x-frame-options) |
 | `Content-Security-Policy` | high | [docs](checks/content-security-policy) |
 | `Referrer-Policy` | low | [docs](checks/referrer-policy) |
+| `Cross-Origin-Resource-Policy` | medium | [docs](checks/cross-origin-resource-policy) |
 | `Set-Cookie` | high / medium | [docs](checks/set-cookie) |
 | `Permissions-Policy` | medium | [docs](checks/permissions-policy) |
 | `Server` / `X-Powered-By` | low | [docs](checks/banner-disclosure) |
