@@ -29,6 +29,32 @@ func RunAllBody(checkers []BodyChecker, body []byte, targetURL string) []Finding
 	return findings
 }
 
+// walkElements parses body as HTML and calls judge on every element node,
+// collecting each non-nil Finding it returns. It's the shared traversal
+// every BodyChecker needs — parsing and walking the tree is identical across
+// checkers; only how a single element is judged differs.
+func walkElements(body []byte, judge func(*html.Node) *Finding) []Finding {
+	doc, err := html.Parse(bytes.NewReader(body))
+	if err != nil {
+		return nil
+	}
+
+	var findings []Finding
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.ElementNode {
+			if f := judge(n); f != nil {
+				findings = append(findings, *f)
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(doc)
+	return findings
+}
+
 const sriReference = "https://cheatsheetseries.owasp.org/cheatsheets/Subresource_Integrity_Cheat_Sheet.html"
 
 // SRIChecker flags <script src> and <link rel="stylesheet" href> tags that
@@ -45,25 +71,9 @@ func (SRIChecker) CheckBody(body []byte, targetURL string) []Finding {
 	if err != nil {
 		return nil
 	}
-	doc, err := html.Parse(bytes.NewReader(body))
-	if err != nil {
-		return nil
-	}
-
-	var findings []Finding
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
-		if n.Type == html.ElementNode {
-			if f := sriFinding(n, base); f != nil {
-				findings = append(findings, *f)
-			}
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
-	}
-	walk(doc)
-	return findings
+	return walkElements(body, func(n *html.Node) *Finding {
+		return sriFinding(n, base)
+	})
 }
 
 // sriFinding judges a single element, returning nil for anything that isn't

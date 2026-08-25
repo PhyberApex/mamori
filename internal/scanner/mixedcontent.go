@@ -1,7 +1,6 @@
 package scanner
 
 import (
-	"bytes"
 	"fmt"
 	"net/url"
 	"strings"
@@ -58,25 +57,9 @@ func (MixedContentChecker) CheckBody(body []byte, targetURL string) []Finding {
 	if err != nil || base.Scheme != "https" {
 		return nil
 	}
-	doc, err := html.Parse(bytes.NewReader(body))
-	if err != nil {
-		return nil
-	}
-
-	var findings []Finding
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
-		if n.Type == html.ElementNode {
-			if f := mixedContentFinding(n, base); f != nil {
-				findings = append(findings, *f)
-			}
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
-	}
-	walk(doc)
-	return findings
+	return walkElements(body, func(n *html.Node) *Finding {
+		return mixedContentFinding(n, base)
+	})
 }
 
 // mixedContentFinding judges a single element, returning nil for anything

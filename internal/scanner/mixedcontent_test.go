@@ -100,13 +100,10 @@ func TestMixedContentCheckerReportsEachOffendingTagIndependently(t *testing.T) {
 func TestRunAllBodyIncludesMixedContentByDefault(t *testing.T) {
 	body := []byte(`<img src="http://insecure.example.net/logo.png">`)
 	findings := scanner.RunAllBody(scanner.DefaultBodyCheckers(), body, mixedContentTargetURL)
-	found := false
-	for _, f := range findings {
-		if f.Severity == scanner.SeverityMedium {
-			found = true
-		}
+	if len(findings) != 1 {
+		t.Fatalf("RunAllBody() returned %d findings, want 1", len(findings))
 	}
-	if !found {
-		t.Errorf("RunAllBody(DefaultBodyCheckers()) = %+v, want a Mixed Content finding", findings)
+	if findings[0].Severity != scanner.SeverityMedium {
+		t.Errorf("Severity = %q, want %q", findings[0].Severity, scanner.SeverityMedium)
 	}
 }
