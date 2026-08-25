@@ -18,5 +18,6 @@ Each check mamori performs is documented here. Every finding includes a link to 
 | `Set-Cookie` | high / medium | [docs](checks/set-cookie) |
 | `Permissions-Policy` | medium | [docs](checks/permissions-policy) |
 | `Server` / `X-Powered-By` | low | [docs](checks/banner-disclosure) |
+| `Access-Control-Allow-Origin` | high | [docs](checks/cors) |
 | `<script>` / `<link>` (SRI) | low | [docs](checks/subresource-integrity) |
 | Mixed Content | medium | [docs](checks/mixed-content) |

@@ -22,7 +22,19 @@ func DefaultCheckers() []Checker {
 		CookieChecker{},
 		PermissionsPolicyChecker{},
 		BannerDisclosureChecker{},
+		CORSChecker{},
 	}
+}
+
+// OriginProber is implemented by Checkers whose Check method must be
+// evaluated against the response to a dedicated probe request carrying a
+// synthetic cross-origin Origin header, rather than the plain scan request
+// every other Checker judges. Scan detects it with a type assertion and
+// issues at most one such probe request per target, shared by every Checker
+// in the set that implements it.
+type OriginProber interface {
+	Checker
+	ProbesOrigin()
 }
 
 func RunAll(checkers []Checker, headers http.Header) []Finding {
@@ -332,20 +344,17 @@ func (BannerDisclosureChecker) Check(headers http.Header) []Finding {
 		// header instead of leaving the origin's alone; headers.Get would
 		// only ever see whichever occurrence happens to be first and could
 		// miss a later, disclosing one. Report the first non-blank value.
-		for _, raw := range headers.Values(name) {
-			value := strings.TrimSpace(raw)
-			if value == "" {
-				continue
-			}
-			findings = append(findings, Finding{
-				Header:    name,
-				Status:    StatusWeak,
-				Severity:  SeverityLow,
-				Reference: bannerDisclosureReference,
-				Message:   fmt.Sprintf("%q reveals backend software/version info useful for fingerprinting the server", value),
-			})
-			break
+		value := firstNonBlankValue(headers, name)
+		if value == "" {
+			continue
 		}
+		findings = append(findings, Finding{
+			Header:    name,
+			Status:    StatusWeak,
+			Severity:  SeverityLow,
+			Reference: bannerDisclosureReference,
+			Message:   fmt.Sprintf("%q reveals backend software/version info useful for fingerprinting the server", value),
+		})
 	}
 	return findings
 }
@@ -355,6 +364,88 @@ func (BannerDisclosureChecker) Check(headers http.Header) []Finding {
 // headers exist only to advertise backend software/version info, which is
 // useful to an attacker fingerprinting the stack and useful to nobody else.
 var bannerHeaderNames = []string{"Server", "X-Powered-By"}
+
+// CORSProbeOrigin is the synthetic, definitely-foreign origin Scan sends as
+// the Origin header of the extra probe request CORSChecker needs (see
+// OriginProber). Any Access-Control-Allow-Origin that reflects it back, or a
+// bare "*", is telling literally any origin on the internet it may read the
+// response. Exported so callers (and tests) that need to recognize a
+// reflected probe origin don't have to duplicate the literal.
+const CORSProbeOrigin = "https://mamori-cors-probe.invalid"
+
+const corsReference = "https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html#cross-origin-resource-sharing"
+
+// CORSChecker flags an Access-Control-Allow-Origin that accepts any origin —
+// either by reflecting back whatever Origin was sent, or a bare "*" —
+// together with Access-Control-Allow-Credentials: true. A reflected origin
+// is directly exploitable: it lets any site on the internet read
+// authenticated responses via a victim's browser. A bare wildcard is not —
+// per the Fetch spec's CORS check, a browser refuses to honor "*" on a
+// credentialed request at all — but it's still flagged at a lower severity,
+// since it signals a server that doesn't understand its own CORS policy and
+// offers no such protection to non-browser clients. A bare wildcard with no
+// credentials, or a specific allow-listed origin that doesn't match the
+// probe's, is either intentionally permissive or already origin-restricted,
+// and isn't a finding on its own.
+type CORSChecker struct{}
+
+func (CORSChecker) Check(headers http.Header) []Finding {
+	// Both comparisons below are byte-exact, not case-insensitive: per the
+	// Fetch spec's CORS check, a browser only honors a reflected origin that
+	// matches the serialized request origin exactly, and only honors
+	// Access-Control-Allow-Credentials when its value is exactly "true". A
+	// server that replies with different casing isn't actually exploitable
+	// through a real browser, so flagging it would be a false positive.
+	acao := firstNonBlankValue(headers, "Access-Control-Allow-Origin")
+	if acao != "*" && acao != CORSProbeOrigin {
+		return nil
+	}
+	if firstNonBlankValue(headers, "Access-Control-Allow-Credentials") != "true" {
+		return nil
+	}
+
+	if acao == CORSProbeOrigin {
+		return []Finding{{
+			Header:    "Access-Control-Allow-Origin",
+			Status:    StatusWeak,
+			Severity:  SeverityHigh,
+			Reference: corsReference,
+			Message:   fmt.Sprintf("%q together with Access-Control-Allow-Credentials: true lets any site read authenticated responses via a victim's browser", acao),
+		}}
+	}
+
+	// A literal "*" never reaches this severity via a spec-compliant
+	// browser: the Fetch spec's CORS check only accepts "*" when the
+	// request isn't credentialed, so a credentialed fetch against this
+	// response fails the check and no browser ever exposes it to
+	// cross-origin JS. Still a real misconfiguration worth surfacing, just
+	// not one with the same exploitability as a reflected origin.
+	return []Finding{{
+		Header:    "Access-Control-Allow-Origin",
+		Status:    StatusWeak,
+		Severity:  SeverityMedium,
+		Reference: corsReference,
+		Message:   `"*" together with Access-Control-Allow-Credentials: true is a broken CORS configuration: compliant browsers won't honor the wildcard on a credentialed request, but non-browser clients enforce no such restriction`,
+	}}
+}
+
+// ProbesOrigin marks CORSChecker as an OriginProber: Check must see the
+// response to the synthetic-Origin probe request, not the plain scan
+// request's headers.
+func (CORSChecker) ProbesOrigin() {}
+
+// firstNonBlankValue returns the first non-blank occurrence of a header,
+// unlike headers.Get which only ever sees the first occurrence regardless of
+// whether it's blank. A misconfigured proxy or CDN can prepend a blank
+// duplicate instead of leaving the origin's header alone.
+func firstNonBlankValue(headers http.Header, name string) string {
+	for _, raw := range headers.Values(name) {
+		if value := strings.TrimSpace(raw); value != "" {
+			return value
+		}
+	}
+	return ""
+}
 
 func checkPresence(headers http.Header, name string, severity Severity, reference string) []Finding {
 	status := StatusPass
