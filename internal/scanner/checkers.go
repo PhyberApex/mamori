@@ -81,7 +81,8 @@ const hstsPreloadHeaderLabel = "Strict-Transport-Security (preload)"
 type HSTSPreloadChecker struct{}
 
 func (HSTSPreloadChecker) Check(headers http.Header) []Finding {
-	if base := (HSTSChecker{}).Check(headers); base[0].Status != StatusPass {
+	hstsFindings := (HSTSChecker{}).Check(headers)
+	if hstsFindings[0].Status != StatusPass {
 		return nil
 	}
 	findings := checkValue(headers, "Strict-Transport-Security", SeverityLow, "https://hstspreload.org/", hstsPreloadWeakness)
