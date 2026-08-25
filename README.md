@@ -68,6 +68,7 @@ Full reference for every check mamori performs is available at
 | `-timeout` | `10s` | HTTP request timeout (e.g. `5s`) |
 | `-o` | `terminal` | output format: `terminal`, `json`, or `sarif` |
 | `-fail-on` | `none` | exit non-zero on findings at or above this severity: `low`, `medium`, `high`, or `none` |
+| `-H` | *(none)* | custom request header `'Key: Value'`, e.g. `-H 'Authorization: Bearer xyz'` (repeatable) |
 | `-config` | *(none)* | path to a YAML config file |
 
 `-o json` emits newline-delimited JSON, one finding per line.
@@ -85,6 +86,10 @@ threshold, and a finding that couldn't be scanned at all (`error`) always
 fails, regardless of threshold. When the gate trips, `mamori` exits `1`
 without an extra error line, since the report above has already shown which
 finding is responsible.
+
+`-H` attaches a header to every scan request, for endpoints that require
+auth (e.g. `-H 'Authorization: Bearer xyz' -H 'Cookie: session=abc'`). It
+has no environment variable or config file equivalent.
 
 ### Environment variables
 
