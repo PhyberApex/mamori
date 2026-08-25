@@ -69,6 +69,7 @@ Full reference for every check mamori performs is available at
 | `-o` | `terminal` | output format: `terminal`, `json`, or `sarif` |
 | `-fail-on` | `none` | exit non-zero on findings at or above this severity: `low`, `medium`, `high`, or `none` |
 | `-config` | *(none)* | path to a YAML config file |
+| `-v`, `-version` | `false` | print the version and exit, performing no scan |
 
 `-o json` emits newline-delimited JSON, one finding per line.
 

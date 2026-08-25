@@ -155,6 +155,26 @@ func TestRunRejectsUnknownOutputFormat(t *testing.T) {
 	}
 }
 
+func TestRunVersionFlagPrintsVersionAndPerformsNoScan(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"-version"}, nil, &buf); err != nil {
+		t.Fatalf("run() with -version returned %v, want nil", err)
+	}
+	if got := buf.String(); !strings.Contains(got, version) {
+		t.Errorf("run() with -version wrote %q, want it to contain %q", got, version)
+	}
+}
+
+func TestRunVersionShorthandFlagPrintsVersion(t *testing.T) {
+	var buf bytes.Buffer
+	if err := run([]string{"-v"}, nil, &buf); err != nil {
+		t.Fatalf("run() with -v returned %v, want nil", err)
+	}
+	if got := buf.String(); !strings.Contains(got, version) {
+		t.Errorf("run() with -v wrote %q, want it to contain %q", got, version)
+	}
+}
+
 func TestRunFailOnFlagOverridesEnvVar(t *testing.T) {
 	url := headerServer(t, nil)
 	t.Setenv("MAMORI_FAIL_ON", "low")

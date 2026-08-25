@@ -38,6 +38,10 @@ type Config struct {
 	// own stand-in for "none" — never fail — so Config's zero value is already
 	// the correct default without a separate sentinel constant.
 	FailOn scanner.Severity
+	// Version is set by -v/-version. The caller checks it and short-circuits
+	// before resolving targets or scanning, mirroring flag.ErrHelp's -h
+	// short-circuit — neither validates the rest of Config first.
+	Version bool
 }
 
 func parseOutput(v string) (Output, error) {
@@ -126,6 +130,8 @@ func registerFlags(cfg *Config) (*flag.FlagSet, *string) {
 	fs.DurationVar(&cfg.Timeout, "timeout", cfg.Timeout, "HTTP request timeout (e.g. 5s)")
 	fs.Var(&cfg.Output, "o", "output format: terminal, json, or sarif")
 	fs.Var(&cfg.FailOn, "fail-on", "exit non-zero on findings at or above this severity: low, medium, high, or none")
+	fs.BoolVar(&cfg.Version, "v", false, "print version and exit")
+	fs.BoolVar(&cfg.Version, "version", false, "print version and exit")
 	var configPath string
 	fs.StringVar(&configPath, "config", "", "path to YAML config file (env MAMORI_CONFIG; default: .mamori.yaml in the working directory if present)")
 	return fs, &configPath
@@ -173,6 +179,9 @@ func Resolve(args []string, getenv func(string) string) (Config, []string, error
 	fs, _ := registerFlags(&cfg)
 	if err := fs.Parse(args); err != nil {
 		return Config{}, nil, err
+	}
+	if cfg.Version {
+		return cfg, nil, nil
 	}
 	if err := validateWorkers(cfg.Workers); err != nil {
 		return Config{}, nil, fmt.Errorf("-workers: %w", err)
