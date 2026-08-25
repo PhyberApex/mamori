@@ -26,7 +26,7 @@ func scanOne(t *testing.T, handler http.Handler) []scanner.Finding {
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 
-	findings := scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, []string{srv.URL}, 1)
+	findings := scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, []string{srv.URL}, 1, nil)
 	if len(findings) != 7 {
 		t.Fatalf("Scan() returned %d findings, want 7", len(findings))
 	}
@@ -81,7 +81,7 @@ func TestScanSkipsBodyFetchWhenNoBodyCheckersConfigured(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, []string{srv.URL}, 1)
+	scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, []string{srv.URL}, 1, nil)
 	if gotMethod != http.MethodHead {
 		t.Errorf("request method = %q, want %q (HEAD should be tried first when no body checkers are configured)", gotMethod, http.MethodHead)
 	}
@@ -93,7 +93,7 @@ func TestScanRunsBodyCheckersWhenConfigured(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	findings := scanner.Scan(t.Context(), srv.Client(), nil, scanner.DefaultBodyCheckers(), []string{srv.URL}, 1)
+	findings := scanner.Scan(t.Context(), srv.Client(), nil, scanner.DefaultBodyCheckers(), []string{srv.URL}, 1, nil)
 	if len(findings) != 1 {
 		t.Fatalf("Scan() returned %d findings, want 1", len(findings))
 	}
@@ -112,7 +112,7 @@ func TestScanFlagsMixedContentOnHTTPSTarget(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	findings := scanner.Scan(t.Context(), srv.Client(), nil, scanner.DefaultBodyCheckers(), []string{srv.URL}, 1)
+	findings := scanner.Scan(t.Context(), srv.Client(), nil, scanner.DefaultBodyCheckers(), []string{srv.URL}, 1, nil)
 	if len(findings) != 1 {
 		t.Fatalf("Scan() returned %d findings, want 1: %+v", len(findings), findings)
 	}
@@ -132,7 +132,7 @@ func TestScanCombinesHeaderAndBodyCheckerFindings(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	findings := scanner.Scan(t.Context(), srv.Client(), []scanner.Checker{scanner.ContentTypeOptionsChecker{}}, scanner.DefaultBodyCheckers(), []string{srv.URL}, 1)
+	findings := scanner.Scan(t.Context(), srv.Client(), []scanner.Checker{scanner.ContentTypeOptionsChecker{}}, scanner.DefaultBodyCheckers(), []string{srv.URL}, 1, nil)
 	if len(findings) != 2 {
 		t.Fatalf("Scan() returned %d findings, want 2 (1 header + 1 body)", len(findings))
 	}
@@ -149,7 +149,7 @@ func TestScanCoversMultipleURLs(t *testing.T) {
 	srvB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	t.Cleanup(srvB.Close)
 
-	findings := scanner.Scan(t.Context(), srvA.Client(), scanner.DefaultCheckers(), nil, []string{srvA.URL, srvB.URL}, 2)
+	findings := scanner.Scan(t.Context(), srvA.Client(), scanner.DefaultCheckers(), nil, []string{srvA.URL, srvB.URL}, 2, nil)
 	if len(findings) != 14 {
 		t.Fatalf("Scan() returned %d findings, want 14 (7 per URL)", len(findings))
 	}
@@ -160,7 +160,7 @@ func TestScanUnreachableTargetYieldsErrorFinding(t *testing.T) {
 	unreachable := srv.URL
 	srv.Close()
 
-	findings := scanner.Scan(t.Context(), http.DefaultClient, scanner.DefaultCheckers(), nil, []string{unreachable}, 1)
+	findings := scanner.Scan(t.Context(), http.DefaultClient, scanner.DefaultCheckers(), nil, []string{unreachable}, 1, nil)
 	if len(findings) != 1 {
 		t.Fatalf("Scan() returned %d findings, want 1 error finding", len(findings))
 	}
@@ -187,7 +187,7 @@ func TestScanServerTimeoutYieldsErrorFinding(t *testing.T) {
 	})
 
 	client := &http.Client{Timeout: 50 * time.Millisecond}
-	findings := scanner.Scan(t.Context(), client, scanner.DefaultCheckers(), nil, []string{srv.URL}, 1)
+	findings := scanner.Scan(t.Context(), client, scanner.DefaultCheckers(), nil, []string{srv.URL}, 1, nil)
 	if len(findings) != 1 {
 		t.Fatalf("Scan() returned %d findings, want 1 error finding", len(findings))
 	}
@@ -207,7 +207,7 @@ func TestScanReportsAllTargetsDespiteFailures(t *testing.T) {
 	deadURL := dead.URL
 	dead.Close()
 
-	findings := scanner.Scan(t.Context(), http.DefaultClient, scanner.DefaultCheckers(), nil, []string{deadURL, healthy.URL}, 2)
+	findings := scanner.Scan(t.Context(), http.DefaultClient, scanner.DefaultCheckers(), nil, []string{deadURL, healthy.URL}, 2, nil)
 
 	byURL := map[string][]scanner.Finding{}
 	for _, f := range findings {
@@ -233,7 +233,7 @@ func TestScanRunsTargetsConcurrently(t *testing.T) {
 
 	client := &http.Client{Timeout: 5 * time.Second}
 	urls := []string{srv.URL + "/a", srv.URL + "/b", srv.URL + "/c"}
-	findings := scanner.Scan(t.Context(), client, scanner.DefaultCheckers(), nil, urls, targets)
+	findings := scanner.Scan(t.Context(), client, scanner.DefaultCheckers(), nil, urls, targets, nil)
 
 	assertAllStatus(t, findings, scanner.StatusMissing)
 	if len(findings) != targets*7 {
@@ -264,7 +264,7 @@ func TestScanBoundsConcurrencyToPoolSize(t *testing.T) {
 	for i := range urls {
 		urls[i] = srv.URL + "/" + string(rune('a'+i))
 	}
-	scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, urls, workers)
+	scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, urls, workers, nil)
 
 	if p := peak.Load(); p > workers {
 		t.Errorf("peak concurrent requests = %d, want at most %d", p, workers)
@@ -276,7 +276,7 @@ func TestScanPreservesTargetOrder(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	urls := []string{srv.URL + "/a", srv.URL + "/b", srv.URL + "/c"}
-	findings := scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, urls, 3)
+	findings := scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, urls, 3, nil)
 
 	var seen []string
 	for _, f := range findings {
@@ -291,5 +291,42 @@ func TestScanPreservesTargetOrder(t *testing.T) {
 		if seen[i] != url {
 			t.Errorf("URL block %d = %q, want %q (input order)", i, seen[i], url)
 		}
+	}
+}
+
+func TestScanAppliesCustomHeadersToRequests(t *testing.T) {
+	var gotAuth, gotCookie string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotCookie = r.Header.Get("Cookie")
+	}))
+	t.Cleanup(srv.Close)
+
+	headers := http.Header{}
+	headers.Set("Authorization", "Bearer xyz")
+	headers.Set("Cookie", "session=abc")
+	scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, []string{srv.URL}, 1, headers)
+
+	if gotAuth != "Bearer xyz" {
+		t.Errorf("Authorization header = %q, want %q", gotAuth, "Bearer xyz")
+	}
+	if gotCookie != "session=abc" {
+		t.Errorf("Cookie header = %q, want %q", gotCookie, "session=abc")
+	}
+}
+
+func TestScanAppliesCustomHeadersWhenFetchingBody(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+	}))
+	t.Cleanup(srv.Close)
+
+	headers := http.Header{}
+	headers.Set("Authorization", "Bearer xyz")
+	scanner.Scan(t.Context(), srv.Client(), nil, scanner.DefaultBodyCheckers(), []string{srv.URL}, 1, headers)
+
+	if gotAuth != "Bearer xyz" {
+		t.Errorf("Authorization header = %q, want %q", gotAuth, "Bearer xyz")
 	}
 }
