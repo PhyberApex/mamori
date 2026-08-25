@@ -21,6 +21,7 @@ type Output string
 const (
 	OutputTerminal Output = "terminal"
 	OutputJSON     Output = "json"
+	OutputSarif    Output = "sarif"
 )
 
 const (
@@ -41,10 +42,10 @@ type Config struct {
 
 func parseOutput(v string) (Output, error) {
 	switch Output(v) {
-	case OutputTerminal, OutputJSON:
+	case OutputTerminal, OutputJSON, OutputSarif:
 		return Output(v), nil
 	}
-	return "", fmt.Errorf("%q is not a known output format (terminal, json)", v)
+	return "", fmt.Errorf("%q is not a known output format (terminal, json, sarif)", v)
 }
 
 // String and Set make *Output satisfy flag.Value, the stdlib's hook for
@@ -123,7 +124,7 @@ func registerFlags(cfg *Config) (*flag.FlagSet, *string) {
 	fs := flag.NewFlagSet("mamori", flag.ContinueOnError)
 	fs.IntVar(&cfg.Workers, "workers", cfg.Workers, "number of concurrent scan workers")
 	fs.DurationVar(&cfg.Timeout, "timeout", cfg.Timeout, "HTTP request timeout (e.g. 5s)")
-	fs.Var(&cfg.Output, "o", "output format: terminal or json")
+	fs.Var(&cfg.Output, "o", "output format: terminal, json, or sarif")
 	fs.Var(&cfg.FailOn, "fail-on", "exit non-zero on findings at or above this severity: low, medium, high, or none")
 	var configPath string
 	fs.StringVar(&configPath, "config", "", "path to YAML config file (env MAMORI_CONFIG; default: .mamori.yaml in the working directory if present)")

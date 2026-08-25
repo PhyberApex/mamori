@@ -54,7 +54,7 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 		return err
 	}
 	client := &http.Client{Timeout: cfg.Timeout}
-	findings := scanner.Scan(context.Background(), client, scanner.DefaultCheckers(), urls, cfg.Workers)
+	findings := scanner.Scan(context.Background(), client, scanner.DefaultCheckers(), scanner.DefaultBodyCheckers(), urls, cfg.Workers)
 	if err := reporterFor(cfg.Output).Report(findings, out); err != nil {
 		return err
 	}
@@ -71,6 +71,8 @@ func reporterFor(o config.Output) scanner.Reporter {
 	switch o {
 	case config.OutputJSON:
 		return scanner.JSONReporter{}
+	case config.OutputSarif:
+		return scanner.SarifReporter{}
 	default:
 		return scanner.TerminalReporter{}
 	}
