@@ -45,7 +45,7 @@ func headerServer(t *testing.T, headers map[string]string) string {
 	transport := original.(*http.Transport).Clone()
 	pool := x509.NewCertPool()
 	pool.AddCert(srv.Certificate())
-	transport.TLSClientConfig = &tls.Config{RootCAs: pool}
+	transport.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
 	http.DefaultTransport = transport
 	t.Cleanup(func() { http.DefaultTransport = original })
 

@@ -18,30 +18,26 @@ const securityTxtReference = "https://www.rfc-editor.org/rfc/rfc9116"
 type SecurityTxtChecker struct{}
 
 func (SecurityTxtChecker) Check(ctx context.Context, client *http.Client, target string) []Finding {
+	probeURL, err := securityTxtURL(target)
+	if err != nil {
+		return []Finding{{Status: StatusError, Message: err.Error()}}
+	}
+
+	_, status, err := doRequest(ctx, client, http.MethodGet, probeURL)
+	if err != nil {
+		return []Finding{{Status: StatusError, Message: err.Error()}}
+	}
+
 	finding := Finding{
 		Header:    "/.well-known/security.txt",
 		Severity:  SeverityLow,
 		Reference: securityTxtReference,
 	}
-
-	probeURL, err := securityTxtURL(target)
-	if err != nil {
-		finding.Status = StatusError
-		finding.Message = err.Error()
-		return []Finding{finding}
-	}
-
-	_, status, err := doRequest(ctx, client, http.MethodGet, probeURL)
-	if err != nil {
-		finding.Status = StatusError
-		finding.Message = err.Error()
-		return []Finding{finding}
-	}
 	if status < 200 || status > 299 {
 		finding.Status = StatusMissing
-		return []Finding{finding}
+	} else {
+		finding.Status = StatusPass
 	}
-	finding.Status = StatusPass
 	return []Finding{finding}
 }
 
