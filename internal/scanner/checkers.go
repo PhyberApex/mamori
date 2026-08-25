@@ -83,24 +83,9 @@ func (HSTSPreloadChecker) Check(headers http.Header) []Finding {
 	if base := (HSTSChecker{}).Check(headers); base[0].Status != StatusPass {
 		return nil
 	}
-	finding := Finding{
-		Header:    hstsPreloadHeaderLabel,
-		Status:    StatusPass,
-		Severity:  SeverityLow,
-		Reference: "https://hstspreload.org/",
-	}
-	for _, value := range headers.Values("Strict-Transport-Security") {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if weak, message := hstsPreloadWeakness(value); weak {
-			finding.Status = StatusWeak
-			finding.Message = message
-			break
-		}
-	}
-	return []Finding{finding}
+	findings := checkValue(headers, "Strict-Transport-Security", SeverityLow, "https://hstspreload.org/", hstsPreloadWeakness)
+	findings[0].Header = hstsPreloadHeaderLabel
+	return findings
 }
 
 // hstsPreloadWeakness flags an HSTS value missing includeSubDomains or
