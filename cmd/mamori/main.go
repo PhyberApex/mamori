@@ -20,6 +20,11 @@ import (
 // repeating that as a generic error would just be noise.
 var errFailThreshold = errors.New("findings at or above the -fail-on threshold")
 
+// version reports the build's release version. goreleaser overwrites it via
+// -ldflags "-X main.version={{.Version}}"; a plain `go build`/`go run` never
+// sets that flag, so it stays at this fallback.
+var version = "dev"
+
 func main() {
 	if err := run(os.Args[1:], stdinIfPiped(), os.Stdout); err != nil {
 		// -h/-help surfaces as flag.ErrHelp after the FlagSet has already
@@ -48,6 +53,12 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 	cfg, targets, err := config.Resolve(args, os.Getenv)
 	if err != nil {
 		return err
+	}
+	if cfg.Version {
+		if _, err := fmt.Fprintln(out, version); err != nil {
+			return err
+		}
+		return nil
 	}
 	urls, err := scanner.ResolveTargets(targets, stdin)
 	if err != nil {
