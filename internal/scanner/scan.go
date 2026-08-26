@@ -139,7 +139,7 @@ func scanExposurePaths(ctx context.Context, client *http.Client, pathCheckers []
 			if err != nil {
 				return
 			}
-			fs := pc.Check(status)
+			fs := pc.CheckStatus(status)
 			if len(fs) == 0 {
 				return
 			}

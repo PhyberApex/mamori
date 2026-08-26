@@ -17,9 +17,9 @@ type PathChecker interface {
 	// target's scheme+host regardless of any path component in the target
 	// URL itself.
 	Path() string
-	// Check judges the probe response's status code, returning no Finding
+	// CheckStatus judges the probe response's status code, returning no Finding
 	// for anything that isn't a confirmed hit.
-	Check(statusCode int) []Finding
+	CheckStatus(statusCode int) []Finding
 }
 
 // exposureReference is shared by every ExposureChecker Finding rather than a
@@ -48,7 +48,7 @@ func NewExposureChecker(path string, severity Severity) ExposureChecker {
 
 func (c ExposureChecker) Path() string { return c.path }
 
-// Check treats 200/206 as a full-severity hit: the path is directly
+// CheckStatus treats 200/206 as a full-severity hit: the path is directly
 // readable. 403 is still a hit — the server recognized and blocked this
 // specific path rather than treating it like every other nonexistent one, so
 // its existence is confirmed — but one severity step down from 200/206,
@@ -56,7 +56,7 @@ func (c ExposureChecker) Path() string { return c.path }
 // clean and produces no Finding: Scan's baseline probe (see
 // scanExposurePaths) is what makes a non-404 status here trustworthy rather
 // than a false positive from a soft-404/catch-all server.
-func (c ExposureChecker) Check(statusCode int) []Finding {
+func (c ExposureChecker) CheckStatus(statusCode int) []Finding {
 	switch statusCode {
 	case http.StatusOK, http.StatusPartialContent:
 		return []Finding{c.finding(c.severity, fmt.Sprintf("responded %d: the path is directly readable", statusCode))}
@@ -98,12 +98,12 @@ func lowerSeverity(s Severity) Severity {
 // it gets a fixed middle-of-the-road severity rather than guessing.
 const extraExposurePathSeverity = SeverityMedium
 
-// DefaultExposurePaths lists the well-known sensitive paths ExposureChecker
+// DefaultPathCheckers lists the well-known sensitive paths ExposureChecker
 // probes for when the category is enabled: version control metadata,
 // environment files, credential stores, and common backup-file patterns.
 // User configuration can only extend this list (see PathCheckersFor), never
 // replace or disable any of its entries.
-func DefaultExposurePaths() []PathChecker {
+func DefaultPathCheckers() []PathChecker {
 	return []PathChecker{
 		NewExposureChecker(".git/config", SeverityHigh),
 		NewExposureChecker(".git/HEAD", SeverityHigh),
@@ -111,7 +111,7 @@ func DefaultExposurePaths() []PathChecker {
 		NewExposureChecker(".DS_Store", SeverityLow),
 		// .htpasswd holds credential hashes and web.config can hold
 		// connection strings/secrets, so both get the same high severity as
-		// .git/* and .env rather than the DefaultExposurePaths doc
+		// .git/* and .env rather than the DefaultPathCheckers doc
 		// comment's other two categories (low/medium), neither of which
 		// fits a credentials or secrets file.
 		NewExposureChecker(".htpasswd", SeverityHigh),
@@ -124,7 +124,7 @@ func DefaultExposurePaths() []PathChecker {
 }
 
 // PathCheckersFor builds the effective PathChecker set for a scan from the
-// resolved config: enabled turns on DefaultExposurePaths, and extra adds to
+// resolved config: enabled turns on DefaultPathCheckers, and extra adds to
 // it — supplying at least one extra path enables the category on its own,
 // even when enabled is false, since adding a path can't be a silent no-op.
 // A nil/empty result (both enabled is false and extra is empty) tells Scan
@@ -134,7 +134,7 @@ func PathCheckersFor(enabled bool, extra []string) []PathChecker {
 	if !enabled && len(extra) == 0 {
 		return nil
 	}
-	checkers := DefaultExposurePaths()
+	checkers := DefaultPathCheckers()
 	seen := make(map[string]bool, len(checkers))
 	for _, c := range checkers {
 		seen[c.Path()] = true

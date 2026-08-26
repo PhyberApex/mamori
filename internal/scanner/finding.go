@@ -85,8 +85,10 @@ type Finding struct {
 	// Header names the specific thing a Finding reports on: a header name
 	// for a Checker/BodyChecker Finding, or the probed path (e.g.
 	// ".git/config") for a PathChecker Finding. Reused rather than adding a
-	// path-specific field so every existing reporter renders both kinds
-	// with no reporter-specific changes.
+	// path-specific field so every reporter renders both kinds through the
+	// same field, needing only the same kind of extra per-Status branch
+	// StatusError already required (see statusTag, sarifRuleAndResult) —
+	// not a whole new code path.
 	Header    string   `json:"header"`
 	Status    Status   `json:"status"`
 	Severity  Severity `json:"severity"`
