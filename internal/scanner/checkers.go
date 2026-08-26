@@ -19,6 +19,7 @@ func DefaultCheckers() []Checker {
 		CSPChecker{},
 		ReferrerPolicyChecker{},
 		COOPChecker{},
+		COEPChecker{},
 		CORPChecker{},
 		CookieChecker{},
 		PermissionsPolicyChecker{},
@@ -255,6 +256,37 @@ func coopWeakness(value string) (weak bool, message string) {
 		return true, "unsafe-none is the default and provides no isolation from cross-origin openers/popups"
 	default:
 		return true, fmt.Sprintf("%q is not a recognized Cross-Origin-Opener-Policy value and provides no isolation", value)
+	}
+}
+
+type COEPChecker struct{}
+
+func (COEPChecker) Check(headers http.Header) []Finding {
+	return checkValue(
+		headers,
+		"Cross-Origin-Embedder-Policy",
+		SeverityLow,
+		"https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cross-Origin-Embedder-Policy",
+		coepWeakness,
+	)
+}
+
+// coepWeakness flags unsafe-none, the default that lets this page load any
+// cross-origin resource without that resource opting in, and any value the
+// spec doesn't define, which browsers don't recognize and so also provides
+// no protection — same treatment as a missing header in both cases. Severity
+// is fixed lower than the other Cross-Origin-* checkers: unlike those,
+// leaving this header unset is often the deliberate, correct choice, since
+// enabling it breaks embedding of any cross-origin resource that isn't
+// itself CORP/CORS-compliant.
+func coepWeakness(value string) (weak bool, message string) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "require-corp", "credentialless":
+		return false, ""
+	case "unsafe-none":
+		return true, "unsafe-none is the default and lets this page load any cross-origin resource without that resource opting in"
+	default:
+		return true, fmt.Sprintf("%q is not a recognized Cross-Origin-Embedder-Policy value and provides no protection", value)
 	}
 }
 

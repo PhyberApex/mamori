@@ -11,6 +11,7 @@ header_pages:
   - checks/content-security-policy.md
   - checks/referrer-policy.md
   - checks/cross-origin-opener-policy.md
+  - checks/cross-origin-embedder-policy.md
   - checks/cross-origin-resource-policy.md
   - checks/set-cookie.md
   - checks/permissions-policy.md

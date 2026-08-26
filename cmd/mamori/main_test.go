@@ -21,6 +21,7 @@ func strongHeaders() map[string]string {
 		"Content-Security-Policy":      "default-src 'self'",
 		"Referrer-Policy":              "strict-origin-when-cross-origin",
 		"Cross-Origin-Opener-Policy":   "same-origin",
+		"Cross-Origin-Embedder-Policy": "require-corp",
 		"Cross-Origin-Resource-Policy": "same-origin",
 		"Permissions-Policy":           "geolocation=()",
 	}

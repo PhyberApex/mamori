@@ -27,3 +27,7 @@ _Avoid_: Priority, Risk level.
 **Isolation** (Cross-Origin-Opener-Policy):
 How completely a page's browsing context group is kept separate from cross-origin popups/openers it interacts with. COOPChecker treats `same-origin`, `same-origin-allow-popups`, and `noopener-allow-popups` as providing real isolation (`pass`); `unsafe-none` and any unrecognized value provide none (`weak`).
 _Avoid_: Cross-origin isolation — that's a distinct, broader platform concept (requires COOP *and* COEP together to unlock things like `SharedArrayBuffer`); don't conflate the header-level Checker with the platform-level guarantee.
+
+**Embedding** (Cross-Origin-Embedder-Policy):
+Whether a page requires every cross-origin subresource it loads to explicitly opt in — via CORP or CORS — before the browser lets it through, or accepts a policy that strips credentials from such requests instead. COEPChecker treats `require-corp` and `credentialless` as providing that guarantee (`pass`); `unsafe-none` and any unrecognized value provide none (`weak`), reported at `SeverityLow` since most sites correctly leave this unset to avoid breaking uncooperative cross-origin embeds — unlike every other header this scanner checks, absence here is often the deliberate, correct choice rather than an oversight.
+_Avoid_: Cross-origin isolation — see the Isolation entry's note; that's the platform-level guarantee this header only partly enables.
