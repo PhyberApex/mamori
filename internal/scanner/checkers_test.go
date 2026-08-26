@@ -25,6 +25,7 @@ func TestCheckersIdentity(t *testing.T) {
 		{scanner.CORPChecker{}, "Cross-Origin-Resource-Policy", scanner.SeverityMedium, "same-origin"},
 		{scanner.PermissionsPolicyChecker{}, "Permissions-Policy", scanner.SeverityMedium, "geolocation=()"},
 		{scanner.XSSProtectionChecker{}, "X-XSS-Protection", scanner.SeverityLow, "0"},
+		{scanner.CacheControlChecker{}, "Cache-Control", scanner.SeverityMedium, "no-store"},
 	}
 
 	for _, tt := range tests {
@@ -146,6 +147,7 @@ func TestCheckValueIgnoresBlankDuplicateOccurrence(t *testing.T) {
 		{"COOP", scanner.COOPChecker{}, http.Header{"Cross-Origin-Opener-Policy": {"same-origin", ""}}},
 		{"COEP", scanner.COEPChecker{}, http.Header{"Cross-Origin-Embedder-Policy": {"require-corp", ""}}},
 		{"CORP", scanner.CORPChecker{}, http.Header{"Cross-Origin-Resource-Policy": {"same-origin", ""}}},
+		{"CacheControl", scanner.CacheControlChecker{}, http.Header{"Cache-Control": {"no-store", ""}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -459,6 +461,70 @@ func TestCORPAcceptsCaseInsensitiveValidValues(t *testing.T) {
 				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
 			}
 		})
+	}
+}
+
+func TestCacheControlWeakValues(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"no-cache alone forces revalidation but doesn't prevent storage", "no-cache"},
+		{"bare public with max-age", "public, max-age=3600"},
+		{"bare max-age with no other directive", "max-age=3600"},
+		{"only unrecognized directives", "stale-while-revalidate=60"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			findings := scanner.CacheControlChecker{}.Check(http.Header{"Cache-Control": {tt.value}})
+			if findings[0].Status != scanner.StatusWeak {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+			}
+			if findings[0].Message == "" {
+				t.Error("Message is empty, want an explanation")
+			}
+		})
+	}
+}
+
+func TestCacheControlAcceptsNoStoreOrPrivate(t *testing.T) {
+	tests := []string{
+		"no-store",
+		"private",
+		"no-store, max-age=0",
+		"max-age=0, private",
+		"public, no-store",
+		"NO-STORE",
+		"Private",
+	}
+	for _, value := range tests {
+		t.Run(value, func(t *testing.T) {
+			findings := scanner.CacheControlChecker{}.Check(http.Header{"Cache-Control": {value}})
+			if findings[0].Status != scanner.StatusPass {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
+			}
+		})
+	}
+}
+
+func TestCacheControlFlagsWeakAmongDuplicateHeaders(t *testing.T) {
+	// A misconfigured proxy/CDN can append a second Cache-Control header
+	// instead of overwriting the origin's. headers.Get would only see
+	// whichever value happens to be first, so the reported status must not
+	// depend on that order.
+	headers := http.Header{"Cache-Control": {"no-store", "public, max-age=3600"}}
+	findings := scanner.CacheControlChecker{}.Check(headers)
+	if findings[0].Status != scanner.StatusWeak {
+		t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+	}
+	if findings[0].Message == "" {
+		t.Error("Message is empty, want an explanation")
+	}
+
+	reversed := http.Header{"Cache-Control": {"public, max-age=3600", "no-store"}}
+	findings = scanner.CacheControlChecker{}.Check(reversed)
+	if findings[0].Status != scanner.StatusWeak {
+		t.Errorf("Status = %q, want %q (order should not matter)", findings[0].Status, scanner.StatusWeak)
 	}
 }
 

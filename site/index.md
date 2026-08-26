@@ -22,5 +22,6 @@ Each check mamori performs is documented here. Every finding includes a link to 
 | `Server` / `X-Powered-By` | low | [docs](checks/banner-disclosure) |
 | `Access-Control-Allow-Origin` | high | [docs](checks/cors) |
 | `X-XSS-Protection` | low | [docs](checks/x-xss-protection) |
+| `Cache-Control` | medium | [docs](checks/cache-control) |
 | `<script>` / `<link>` (SRI) | low | [docs](checks/subresource-integrity) |
 | Mixed Content | medium | [docs](checks/mixed-content) |

@@ -5,8 +5,8 @@ A concurrent scanner that checks HTTP(S) endpoints for missing or misconfigured 
 ## Language
 
 **Checker**:
-A single security-header rule that inspects a response's headers and produces zero or more Findings.
-_Avoid_: Rule, Validator, Inspector.
+A single security-header rule that inspects a response's headers and produces zero or more Findings. Every Checker runs against every target unconditionally — mamori has no concept of endpoint sensitivity (a distinction between, say, an API response and a static asset). A Checker that needs a real sensitivity signal to avoid false positives should earn that as its own decision, not assume the concept already exists.
+_Avoid_: Rule, Validator, Inspector, sensitive endpoint, likely-sensitive.
 
 **Finding**:
 The result of running one Checker against one target — a header name, a Status, a Severity, a reference link, and (when the Status is `weak`) a message explaining what's wrong.

@@ -26,6 +26,7 @@ func DefaultCheckers() []Checker {
 		BannerDisclosureChecker{},
 		CORSChecker{},
 		XSSProtectionChecker{},
+		CacheControlChecker{},
 	}
 }
 
@@ -387,6 +388,42 @@ func isEnabledXSSProtectionValue(value string) bool {
 		}
 	}
 	return true
+}
+
+const cacheControlReference = "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cache-Control"
+
+type CacheControlChecker struct{}
+
+func (CacheControlChecker) Check(headers http.Header) []Finding {
+	return checkValue(
+		headers,
+		"Cache-Control",
+		SeverityMedium,
+		cacheControlReference,
+		cacheControlWeakness,
+	)
+}
+
+// cacheControlWeakness flags a value that lacks a directive actually
+// preventing storage: no-store and private are the only directives that keep
+// a response out of shared/private caches respectively. no-cache alone only
+// forces revalidation without preventing storage, and a bare public,
+// max-age=N with nothing else, or a value with only unrecognized directives,
+// all leave the response cacheable by any shared cache (proxy/CDN) in the
+// path.
+//
+// Cache-Control's directives are a comma-separated list, unlike the
+// semicolon-separated directives HSTS/CSP use, so parsing must split on
+// commas.
+func cacheControlWeakness(value string) (weak bool, message string) {
+	for _, directive := range strings.Split(value, ",") {
+		name, _, _ := strings.Cut(strings.TrimSpace(directive), "=")
+		switch strings.ToLower(strings.TrimSpace(name)) {
+		case "no-store", "private":
+			return false, ""
+		}
+	}
+	return true, fmt.Sprintf("%q contains neither no-store nor private and permits storage in shared caches", value)
 }
 
 const cookieReference = "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html"
