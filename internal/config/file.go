@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/PhyberApex/mamori/internal/scanner"
 	"gopkg.in/yaml.v3"
 )
 
@@ -18,10 +19,11 @@ const autoDiscoverPath = ".mamori.yaml"
 // are pointers so the loader can tell "absent" apart from "explicitly zero"
 // and only override what the file actually sets.
 type fileConfig struct {
-	Targets []string `yaml:"targets"`
-	Workers *int     `yaml:"workers"`
-	Timeout *string  `yaml:"timeout"`
-	Output  *Output  `yaml:"output"`
+	Targets      []string              `yaml:"targets"`
+	Workers      *int                  `yaml:"workers"`
+	Timeout      *string               `yaml:"timeout"`
+	Output       *Output               `yaml:"output"`
+	Suppressions []scanner.Suppression `yaml:"suppressions"`
 }
 
 // resolveConfigPath decides which config file, if any, supplies the config
@@ -90,6 +92,10 @@ func applyFileConfig(cfg *Config, fc fileConfig, path string) error {
 	if fc.Output != nil {
 		cfg.Output = *fc.Output
 	}
+	if err := validateSuppressions(fc.Suppressions); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	cfg.Suppressions = fc.Suppressions
 	return nil
 }
 

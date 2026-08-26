@@ -48,6 +48,12 @@ type Config struct {
 	// Headers holds the -H flags, applied to every scan request. The zero
 	// value (nil) is already the correct default: no extra headers.
 	Headers Headers
+	// Suppressions holds the config-file "suppressions" list, marking
+	// Findings as an accepted risk or known false positive. There is no
+	// flag/env equivalent — the config file is the only place these are
+	// set — so the zero value (nil) is already the correct default: no
+	// suppressions.
+	Suppressions []scanner.Suppression
 }
 
 // Headers is http.Header under the flag package's Value contract: a defined
@@ -155,6 +161,19 @@ func validateWorkers(n int) error {
 func validateTimeout(d time.Duration) error {
 	if d <= 0 {
 		return fmt.Errorf("%v is not a positive duration", d)
+	}
+	return nil
+}
+
+// validateSuppressions reports whether every entry in suppressions sets at
+// least one of Header or Host — an entry setting neither is a config error,
+// not a silent no-op, since suppressions has no flag/env layer to fall back
+// on for this check.
+func validateSuppressions(suppressions []scanner.Suppression) error {
+	for i, s := range suppressions {
+		if s.Header == "" && s.Host == "" {
+			return fmt.Errorf("suppressions[%d]: must set at least one of header or host", i)
+		}
 	}
 	return nil
 }

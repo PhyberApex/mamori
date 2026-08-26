@@ -32,6 +32,7 @@ const (
 	ansiRed    = "\x1b[31m"
 	ansiGreen  = "\x1b[32m"
 	ansiYellow = "\x1b[33m"
+	ansiDim    = "\x1b[2m"
 )
 
 func colorize(color, s string) string {
@@ -86,6 +87,9 @@ func (TerminalReporter) Report(findings []Finding, w io.Writer) error {
 				if f.Status != StatusPass && f.Reference != "" {
 					line += " → " + f.Reference
 				}
+			}
+			if f.Suppressed {
+				line += " " + colorize(ansiDim, "[SUPPRESSED]")
 			}
 			if _, err := fmt.Fprintf(w, "%s\n", line); err != nil {
 				return err

@@ -167,6 +167,45 @@ func TestTerminalReporterColorsOutput(t *testing.T) {
 	}
 }
 
+func TestTerminalReporterMarksSuppressedFindings(t *testing.T) {
+	findings := []scanner.Finding{
+		{
+			URL:        "https://a.example",
+			Header:     "Content-Security-Policy",
+			Status:     scanner.StatusMissing,
+			Severity:   scanner.SeverityHigh,
+			Suppressed: true,
+		},
+		{
+			URL:      "https://a.example",
+			Header:   "X-Frame-Options",
+			Status:   scanner.StatusMissing,
+			Severity: scanner.SeverityMedium,
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.TerminalReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	var suppressedLine, xfoLine string
+	for _, line := range strings.Split(buf.String(), "\n") {
+		if strings.Contains(line, "Content-Security-Policy") {
+			suppressedLine = line
+		}
+		if strings.Contains(line, "X-Frame-Options") {
+			xfoLine = line
+		}
+	}
+	if !strings.Contains(suppressedLine, "SUPPRESSED") {
+		t.Errorf("suppressed finding's line does not mention SUPPRESSED\nline: %q", suppressedLine)
+	}
+	if strings.Contains(xfoLine, "SUPPRESSED") {
+		t.Errorf("non-suppressed finding's line mentions SUPPRESSED\nline: %q", xfoLine)
+	}
+}
+
 func TestJSONReporterEmitsOneFindingPerLine(t *testing.T) {
 	findings := []scanner.Finding{
 		{
@@ -237,5 +276,52 @@ func TestJSONReporterEmitsOneFindingPerLine(t *testing.T) {
 	}
 	if third["message"] != "unsafe-url leaks the full URL, including query strings, to third parties on cross-origin requests" {
 		t.Errorf("weak finding message = %v, want the weakness explanation", third["message"])
+	}
+}
+
+func TestJSONReporterMarksSuppressedFindingWithoutChangingStatus(t *testing.T) {
+	findings := []scanner.Finding{
+		{
+			URL:        "https://a.example",
+			Header:     "Content-Security-Policy",
+			Status:     scanner.StatusMissing,
+			Severity:   scanner.SeverityHigh,
+			Suppressed: true,
+		},
+		{
+			URL:      "https://a.example",
+			Header:   "X-Frame-Options",
+			Status:   scanner.StatusMissing,
+			Severity: scanner.SeverityMedium,
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.JSONReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("got %d lines, want one per finding (2)\noutput:\n%s", len(lines), buf.String())
+	}
+
+	var suppressed map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &suppressed); err != nil {
+		t.Fatalf("line 1 is not valid JSON: %v\nline: %s", err, lines[0])
+	}
+	if suppressed["status"] != "missing" {
+		t.Errorf("suppressed finding status = %v, want %q unchanged", suppressed["status"], "missing")
+	}
+	if suppressed["suppressed"] != true {
+		t.Errorf("suppressed finding suppressed = %v, want true", suppressed["suppressed"])
+	}
+
+	var unsuppressed map[string]any
+	if err := json.Unmarshal([]byte(lines[1]), &unsuppressed); err != nil {
+		t.Fatalf("line 2 is not valid JSON: %v\nline: %s", err, lines[1])
+	}
+	if _, present := unsuppressed["suppressed"]; present {
+		t.Errorf("unsuppressed finding has a %q key, want it omitted", "suppressed")
 	}
 }

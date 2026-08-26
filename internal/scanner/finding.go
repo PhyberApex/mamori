@@ -81,6 +81,12 @@ type Finding struct {
 	Severity  Severity `json:"severity"`
 	Reference string   `json:"reference"`
 	Message   string   `json:"message"`
+	// Suppressed records whether a config-file Suppression matched this
+	// Finding. It is orthogonal to Status: a suppressed Finding keeps
+	// whatever Status/Severity it already had, so existing JSON consumers
+	// of status see no change. omitempty keeps it out of JSON entirely for
+	// the common case of no suppressions configured.
+	Suppressed bool `json:"suppressed,omitempty"`
 }
 
 // Fails reports whether f should trip a -fail-on gate at the given
@@ -88,12 +94,17 @@ type Finding struct {
 // fails anything — that has to be enforced here rather than left to callers,
 // since "none" is Severity's own stand-in for "gate disabled" and every
 // caller of Fails/AnyFails needs that guarantee, not just -fail-on's current
-// call site. Otherwise a StatusError always fails, regardless of threshold,
-// since a scan that couldn't complete shouldn't silently report success; a
+// call site. A suppressed Finding never fails either, regardless of
+// severity or Status, since that's the entire point of suppressing it.
+// Otherwise a StatusError always fails, regardless of threshold, since a
+// scan that couldn't complete shouldn't silently report success; a
 // Missing/Weak finding fails once its severity reaches threshold; a Pass
 // never fails.
 func (f Finding) Fails(threshold Severity) bool {
 	if threshold == "" {
+		return false
+	}
+	if f.Suppressed {
 		return false
 	}
 	if f.Status == StatusError {

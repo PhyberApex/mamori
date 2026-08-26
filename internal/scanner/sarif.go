@@ -41,11 +41,29 @@ type sarifText struct {
 }
 
 type sarifResult struct {
-	RuleID    string          `json:"ruleId"`
-	Level     string          `json:"level"`
-	Message   sarifText       `json:"message"`
-	Locations []sarifLocation `json:"locations"`
+	RuleID       string             `json:"ruleId"`
+	Level        string             `json:"level"`
+	Message      sarifText          `json:"message"`
+	Locations    []sarifLocation    `json:"locations"`
+	Suppressions []sarifSuppression `json:"suppressions,omitempty"`
 }
+
+// sarifSuppression represents a suppressed result via SARIF's native
+// per-result suppressions field (§3.28.14) rather than omitting the result
+// from Results entirely.
+type sarifSuppression struct {
+	Kind sarifSuppressionKind `json:"kind"`
+}
+
+// sarifSuppressionKind is SARIF's closed set of suppression kinds, the same
+// named-type-plus-constants pattern Status and Severity use elsewhere in
+// this package. mamori only ever produces "external": a suppression
+// recorded outside the tool run itself, via the config-file suppressions
+// list, never something a checker discovered mid-scan ("inSource", SARIF's
+// other kind, doesn't apply here).
+type sarifSuppressionKind string
+
+const sarifSuppressionExternal sarifSuppressionKind = "external"
 
 type sarifLocation struct {
 	PhysicalLocation sarifPhysicalLocation `json:"physicalLocation"`
@@ -128,6 +146,9 @@ func sarifRuleAndResult(f Finding) (sarifRule, sarifResult) {
 		Locations: []sarifLocation{
 			{PhysicalLocation: sarifPhysicalLocation{ArtifactLocation: sarifArtifactLocation{URI: f.URL}}},
 		},
+	}
+	if f.Suppressed {
+		result.Suppressions = []sarifSuppression{{Kind: sarifSuppressionExternal}}
 	}
 	return rule, result
 }

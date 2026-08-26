@@ -117,6 +117,10 @@ output: json
 targets:
   - https://example.com
   - https://example.org
+suppressions:
+  - header: Content-Security-Policy
+    host: https://cdn.example.com
+  - host: https://legacy.example.com   # header omitted -> suppresses every header for this host
 ```
 
 Select a file explicitly with `-config <path>` or `MAMORI_CONFIG=<path>`. If
@@ -130,6 +134,14 @@ Because auto-discovery is silent, running mamori in an unfamiliar directory
 that contains a `.mamori.yaml` will pick up its settings and targets without
 being asked — review a directory's `.mamori.yaml` before scanning there if
 you don't already trust its contents.
+
+Each `suppressions` entry has an optional `header` and an optional `host`;
+either may be omitted to mean "any" (at least one must be set). Matching is
+an exact, case-insensitive string comparison against the finding's header
+name and the literal target string mamori scanned — no glob/wildcard
+support. A suppressed finding is excluded from `-fail-on` gating regardless
+of severity, but still appears in terminal, JSON, and SARIF output, marked
+as suppressed rather than omitted.
 
 ## License
 

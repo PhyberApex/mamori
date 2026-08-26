@@ -111,6 +111,51 @@ func TestSarifReporterMapsSeverityToLevel(t *testing.T) {
 	}
 }
 
+func TestSarifReporterMarksSuppressedResultViaNativeSuppressionsField(t *testing.T) {
+	findings := []scanner.Finding{
+		{URL: "https://a.example", Header: "Content-Security-Policy", Status: scanner.StatusMissing, Severity: scanner.SeverityHigh, Suppressed: true},
+		{URL: "https://a.example", Header: "X-Frame-Options", Status: scanner.StatusMissing, Severity: scanner.SeverityMedium},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.SarifReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	var doc struct {
+		Runs []struct {
+			Results []struct {
+				RuleID       string `json:"ruleId"`
+				Suppressions []struct {
+					Kind string `json:"kind"`
+				} `json:"suppressions"`
+			} `json:"results"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &doc); err != nil {
+		t.Fatalf("output is not valid JSON: %v\noutput:\n%s", err, buf.String())
+	}
+
+	if len(doc.Runs[0].Results) != 2 {
+		t.Fatalf("got %d results, want 2 (suppressed finding must still appear in results)", len(doc.Runs[0].Results))
+	}
+
+	byRule := map[string][]struct {
+		Kind string `json:"kind"`
+	}{}
+	for _, r := range doc.Runs[0].Results {
+		byRule[r.RuleID] = r.Suppressions
+	}
+
+	suppressions := byRule["Content-Security-Policy"]
+	if len(suppressions) != 1 || suppressions[0].Kind != "external" {
+		t.Errorf("suppressed result's suppressions = %+v, want [{kind: external}]", suppressions)
+	}
+	if len(byRule["X-Frame-Options"]) != 0 {
+		t.Errorf("non-suppressed result has suppressions = %+v, want none", byRule["X-Frame-Options"])
+	}
+}
+
 func TestSarifReporterEnvelopeAndLocation(t *testing.T) {
 	findings := []scanner.Finding{
 		{URL: "https://a.example", Header: "X-Frame-Options", Status: scanner.StatusMissing, Severity: scanner.SeverityMedium},

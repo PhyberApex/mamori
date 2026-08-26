@@ -231,6 +231,40 @@ targets:
 	}
 }
 
+func TestResolveConfigFileLoadsSuppressions(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `
+suppressions:
+  - header: Content-Security-Policy
+    host: https://cdn.example.com
+  - host: https://legacy.example.com
+`)
+
+	cfg, _, err := config.Resolve([]string{"-config", path}, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if len(cfg.Suppressions) != 2 {
+		t.Fatalf("Suppressions = %+v, want 2 entries", cfg.Suppressions)
+	}
+	if cfg.Suppressions[0].Header != "Content-Security-Policy" || cfg.Suppressions[0].Host != "https://cdn.example.com" {
+		t.Errorf("Suppressions[0] = %+v, want header+host pair", cfg.Suppressions[0])
+	}
+	if cfg.Suppressions[1].Header != "" || cfg.Suppressions[1].Host != "https://legacy.example.com" {
+		t.Errorf("Suppressions[1] = %+v, want host-only entry", cfg.Suppressions[1])
+	}
+}
+
+func TestResolveConfigFileRejectsSuppressionWithNeitherHeaderNorHost(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `
+suppressions:
+  - {}
+`)
+
+	if _, _, err := config.Resolve([]string{"-config", path}, noEnv); err == nil {
+		t.Error("Resolve() with a suppression entry setting neither header nor host returned nil error, want error")
+	}
+}
+
 func TestResolveWithNoConfigFilePresentIsUnchanged(t *testing.T) {
 	t.Chdir(t.TempDir())
 
