@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.1.0](https://github.com/PhyberApex/mamori/compare/v1.0.0...v1.1.0) (2026-08-26)
+
+
+### Features
+
+* add --version/-v flag and bug-report issue template ([#78](https://github.com/PhyberApex/mamori/issues/78)) ([e7774f3](https://github.com/PhyberApex/mamori/commit/e7774f32b7d85236e5a7669202561fb8d80b6b8f))
+* add GitHub issue and PR templates ([#77](https://github.com/PhyberApex/mamori/issues/77)) ([3cf160f](https://github.com/PhyberApex/mamori/commit/3cf160f95068fc5fcd6c0e9bddfd2f50e6ebf1c5)), closes [#72](https://github.com/PhyberApex/mamori/issues/72)
+* **cli:** add repeatable -H flag for custom request headers ([#76](https://github.com/PhyberApex/mamori/issues/76)) ([6dcff0b](https://github.com/PhyberApex/mamori/commit/6dcff0bdd32f55770a37d358621ab6239f988496)), closes [#60](https://github.com/PhyberApex/mamori/issues/60)
+* **scanner:** add CORS misconfiguration checker ([#69](https://github.com/PhyberApex/mamori/issues/69)) ([9070502](https://github.com/PhyberApex/mamori/commit/9070502894a4a7881e314c8b7d5d4e289152b0c4))
+* **scanner:** add Cross-Origin-Embedder-Policy checker ([#81](https://github.com/PhyberApex/mamori/issues/81)) ([bb54faa](https://github.com/PhyberApex/mamori/commit/bb54faad8040832973d3254d05f26a1b06037e1d))
+* **scanner:** add Cross-Origin-Opener-Policy checker ([#80](https://github.com/PhyberApex/mamori/issues/80)) ([04ec0a9](https://github.com/PhyberApex/mamori/commit/04ec0a97e62dfddae88f26a6f8dc6189dbe631c8))
+* **scanner:** add Cross-Origin-Resource-Policy checker ([#63](https://github.com/PhyberApex/mamori/issues/63)) ([85ae880](https://github.com/PhyberApex/mamori/commit/85ae8809be33ad4e1b9da45b7b51e0925a752c0c))
+* **scanner:** add mixed-content checker for https targets ([#75](https://github.com/PhyberApex/mamori/issues/75)) ([fee96be](https://github.com/PhyberApex/mamori/commit/fee96be2ce269b173dbec464435846acdd57e667))
+* **scanner:** add Permissions-Policy checker ([#61](https://github.com/PhyberApex/mamori/issues/61)) ([945e61d](https://github.com/PhyberApex/mamori/commit/945e61d48550cac2566bb2df95a683035e3e5f44))
+* **scanner:** add SARIF output format ([#71](https://github.com/PhyberApex/mamori/issues/71)) ([bac7dd2](https://github.com/PhyberApex/mamori/commit/bac7dd2943495bdd9b61d9a55ed52bf0541f0b6b))
+* **scanner:** add server banner disclosure checker ([#65](https://github.com/PhyberApex/mamori/issues/65)) ([8521f4a](https://github.com/PhyberApex/mamori/commit/8521f4ad692b2d53fd4776b359822c644a64e9d5))
+* **scanner:** add Subresource Integrity (SRI) checker ([#68](https://github.com/PhyberApex/mamori/issues/68)) ([545df08](https://github.com/PhyberApex/mamori/commit/545df08f6465f64cc68b8bf69f5d05e28b701dae))
+* **scanner:** add X-XSS-Protection checker ([#82](https://github.com/PhyberApex/mamori/issues/82)) ([89e0361](https://github.com/PhyberApex/mamori/commit/89e0361b2921350c22bdcee6de091e4f1672af51)), closes [#41](https://github.com/PhyberApex/mamori/issues/41)
+* **scanner:** flag weak CSP values beyond mere presence ([#64](https://github.com/PhyberApex/mamori/issues/64)) ([ce9a10c](https://github.com/PhyberApex/mamori/commit/ce9a10c4787cd3f80ae8efb2df916206bd79912c)), closes [#42](https://github.com/PhyberApex/mamori/issues/42)
+
 ## 1.0.0 (2026-08-23)
 
 
