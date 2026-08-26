@@ -2,8 +2,12 @@ package scanner
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 )
 
@@ -11,7 +15,7 @@ import (
 // target becomes an error finding instead of aborting the scan, so every
 // target is accounted for in the report. headers, if non-nil, is applied to
 // every outgoing request (e.g. for endpoints that require auth).
-func Scan(ctx context.Context, client *http.Client, checkers []Checker, bodyCheckers []BodyChecker, urls []string, workers int, headers http.Header) []Finding {
+func Scan(ctx context.Context, client *http.Client, checkers []Checker, bodyCheckers []BodyChecker, pathCheckers []PathChecker, urls []string, workers int, headers http.Header) []Finding {
 	jobs := make(chan int)
 	// Each worker writes only to its own job's index, so the slice needs no
 	// mutex: distinct goroutines never touch the same element, and wg.Wait()
@@ -28,7 +32,7 @@ func Scan(ctx context.Context, client *http.Client, checkers []Checker, bodyChec
 			// Ranging over a channel keeps receiving until it is closed,
 			// which is how each worker knows there is no more work.
 			for i := range jobs {
-				perTarget[i] = scanTarget(ctx, client, checkers, bodyCheckers, urls[i], headers)
+				perTarget[i] = scanTarget(ctx, client, checkers, bodyCheckers, pathCheckers, urls[i], headers)
 			}
 		}()
 	}
@@ -50,7 +54,7 @@ func Scan(ctx context.Context, client *http.Client, checkers []Checker, bodyChec
 // scanTarget only pays for a body download when a BodyChecker actually needs
 // one: with none configured it keeps the HEAD-preferring fetchHeaders path,
 // same as before body checks existed.
-func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, bodyCheckers []BodyChecker, url string, reqHeaders http.Header) []Finding {
+func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, bodyCheckers []BodyChecker, pathCheckers []PathChecker, url string, reqHeaders http.Header) []Finding {
 	var respHeaders http.Header
 	var bodyFindings []Finding
 	var err error
@@ -82,10 +86,109 @@ func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, bo
 		}
 	}
 
+	// Only pay for the exposure-check requests when at least one PathChecker
+	// is configured, same opt-in-cost pattern as bodyCheckers/originBased
+	// above.
+	if len(pathCheckers) > 0 {
+		findings = append(findings, scanExposurePaths(ctx, client, pathCheckers, url, reqHeaders)...)
+	}
+
 	for i := range findings {
 		findings[i].URL = url
 	}
 	return findings
+}
+
+// scanExposurePaths runs the sensitive-path exposure check for one target.
+// It first issues a probe to a randomized, deliberately-nonexistent path at
+// the target's origin: if that doesn't come back 404, the target is a
+// soft-404/catch-all server (or the probe itself failed), which would make
+// every configured path below look exposed regardless of whether it
+// actually is — so this returns exactly one StatusError Finding noting the
+// check was skipped, and probes none of the configured paths. Otherwise
+// every configured path is probed concurrently, root-relative to the
+// target's origin regardless of any path component in targetURL itself —
+// mamori issues no other requests per target for this check, so there's no
+// staggering to do.
+func scanExposurePaths(ctx context.Context, client *http.Client, pathCheckers []PathChecker, targetURL string, reqHeaders http.Header) []Finding {
+	origin, err := targetOrigin(targetURL)
+	if err != nil {
+		return nil
+	}
+
+	baselineStatus, err := probePathStatus(ctx, client, origin, randomExposureProbePath(), reqHeaders)
+	if err != nil || baselineStatus != http.StatusNotFound {
+		return []Finding{{
+			Status:  StatusError,
+			Message: "sensitive-path exposure check skipped: target did not return 404 for a random nonexistent path, so its responses can't be trusted to tell an exposed path from a missing one",
+		}}
+	}
+
+	var mu sync.Mutex
+	var findings []Finding
+	var wg sync.WaitGroup
+	for _, pc := range pathCheckers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// A single path's probe failing (as opposed to the baseline
+			// probe above) is skipped rather than turned into a Finding,
+			// the same "don't blank out everything else on one extra
+			// request failing" treatment fetchOriginProbeHeaders gets.
+			status, err := probePathStatus(ctx, client, origin, pc.Path(), reqHeaders)
+			if err != nil {
+				return
+			}
+			fs := pc.Check(status)
+			if len(fs) == 0 {
+				return
+			}
+			mu.Lock()
+			findings = append(findings, fs...)
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	return findings
+}
+
+// targetOrigin returns targetURL's scheme+host, discarding any path/query:
+// exposure paths are always probed root-relative to the origin, never
+// relative to whatever path component the target URL itself has.
+func targetOrigin(targetURL string) (string, error) {
+	u, err := url.Parse(targetURL)
+	if err != nil {
+		return "", err
+	}
+	return u.Scheme + "://" + u.Host, nil
+}
+
+// probePathStatus issues a GET for path at origin and returns the response
+// status code. GET rather than the plain scan's HEAD-then-fallback: some of
+// the paths this check probes (e.g. .htpasswd) are handled by servers that
+// only recognize GET, and this check only needs a status code, so there's no
+// benefit to a second request the way the HEAD/GET fallback avoids one for
+// header inspection.
+func probePathStatus(ctx context.Context, client *http.Client, origin, path string, reqHeaders http.Header) (int, error) {
+	target := origin + "/" + strings.TrimPrefix(path, "/")
+	_, status, err := doRequest(ctx, client, http.MethodGet, target, reqHeaders, "")
+	return status, err
+}
+
+// randomExposureProbePath returns a root-relative path that's exceedingly
+// unlikely to exist on a real target and different on every call, so a
+// target can't special-case a fixed probe string to defeat
+// scanExposurePaths' baseline reliability check.
+func randomExposureProbePath() string {
+	var buf [16]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		// crypto/rand.Read only fails if the OS entropy source is
+		// unavailable, in which case the process has bigger problems than
+		// this probe. A fixed fallback keeps the baseline check functional
+		// (if no longer unguessable) rather than panicking mid-scan.
+		return "mamori-exposure-probe-fallback"
+	}
+	return "mamori-exposure-probe-" + hex.EncodeToString(buf[:])
 }
 
 // splitOriginProbers separates checkers that judge the plain scan request

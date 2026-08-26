@@ -3,6 +3,7 @@ package scanner_test
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/PhyberApex/mamori/internal/scanner"
@@ -108,6 +109,49 @@ func TestSarifReporterMapsSeverityToLevel(t *testing.T) {
 		if r.RuleID == "scan-error" && r.Message.Text != "context deadline exceeded" {
 			t.Errorf("scan-error message = %q, want the scan error text", r.Message.Text)
 		}
+	}
+}
+
+func TestSarifReporterRendersExposedFindingWithoutHeaderWording(t *testing.T) {
+	findings := []scanner.Finding{
+		{URL: "https://a.example", Header: ".env", Status: scanner.StatusExposed, Severity: scanner.SeverityHigh, Message: "responded 200: the path is directly readable"},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.SarifReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	var doc struct {
+		Runs []struct {
+			Results []struct {
+				RuleID  string `json:"ruleId"`
+				Level   string `json:"level"`
+				Message struct {
+					Text string `json:"text"`
+				} `json:"message"`
+			} `json:"results"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &doc); err != nil {
+		t.Fatalf("output is not valid JSON: %v\noutput:\n%s", err, buf.String())
+	}
+
+	if len(doc.Runs[0].Results) != 1 {
+		t.Fatalf("got %d results, want 1", len(doc.Runs[0].Results))
+	}
+	result := doc.Runs[0].Results[0]
+	if result.RuleID != ".env" {
+		t.Errorf("ruleId = %q, want %q", result.RuleID, ".env")
+	}
+	if result.Level != "error" {
+		t.Errorf("level = %q, want %q (high severity)", result.Level, "error")
+	}
+	if strings.Contains(result.Message.Text, "header") {
+		t.Errorf("message = %q, want no \"header\" wording for a path-exposure finding", result.Message.Text)
+	}
+	if !strings.Contains(result.Message.Text, ".env") || !strings.Contains(result.Message.Text, "responded 200") {
+		t.Errorf("message = %q, want it to name the path and include the finding's own message", result.Message.Text)
 	}
 }
 

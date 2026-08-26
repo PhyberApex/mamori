@@ -54,6 +54,19 @@ type Config struct {
 	// set — so the zero value (nil) is already the correct default: no
 	// suppressions.
 	Suppressions []scanner.Suppression
+	// CheckExposedPaths turns on the sensitive-path exposure checker
+	// category, probing every target's origin for the built-in default path
+	// list. Off by default: unlike every other check, it issues requests to
+	// paths the user never named as a target — flag + env + config-file,
+	// following the pattern workers/timeout/output/fail-on already use.
+	CheckExposedPaths bool
+	// ExtraExposedPaths adds paths to the default list CheckExposedPaths
+	// probes, on top of it rather than instead of it. Supplying at least one
+	// entry here enables the category on its own, even when
+	// CheckExposedPaths is false — adding a path can't be a silent no-op.
+	// The zero value (nil) is already the correct default: no extra paths.
+	// Flag + config-file only, no env var, the same pattern -H follows.
+	ExtraExposedPaths ExposedPaths
 }
 
 // Headers is http.Header under the flag package's Value contract: a defined
@@ -91,6 +104,19 @@ func (h *Headers) Set(v string) error {
 		*h = Headers{}
 	}
 	http.Header(*h).Set(key, strings.TrimSpace(value))
+	return nil
+}
+
+// ExposedPaths is a []string under the flag package's Value contract, the
+// same wrapper pattern Headers uses above: a defined type so *ExposedPaths
+// can carry String/Set methods a plain []string can't. -exposed-path is
+// repeatable, so Set appends rather than replacing on each call.
+type ExposedPaths []string
+
+func (p *ExposedPaths) String() string { return strings.Join(*p, ", ") }
+
+func (p *ExposedPaths) Set(v string) error {
+	*p = append(*p, v)
 	return nil
 }
 
@@ -196,6 +222,8 @@ func registerFlags(cfg *Config) (*flag.FlagSet, *string) {
 	fs.BoolVar(&cfg.Version, "v", false, "print version and exit")
 	fs.BoolVar(&cfg.Version, "version", false, "print version and exit")
 	fs.Var(&cfg.Headers, "H", "custom request header 'Key: Value', e.g. -H 'Authorization: Bearer xyz' (repeatable)")
+	fs.BoolVar(&cfg.CheckExposedPaths, "check-exposed-paths", cfg.CheckExposedPaths, "probe each target's origin for well-known sensitive paths (.git, .env, backups, ...); off by default since it requests paths beyond the scanned URL itself")
+	fs.Var(&cfg.ExtraExposedPaths, "exposed-path", "extra path to probe in addition to the default list, e.g. -exposed-path 'debug.log' (repeatable; also enables -check-exposed-paths)")
 	var configPath string
 	fs.StringVar(&configPath, "config", "", "path to YAML config file (env MAMORI_CONFIG; default: .mamori.yaml in the working directory if present)")
 	return fs, &configPath
@@ -238,6 +266,13 @@ func Resolve(args []string, getenv func(string) string) (Config, []string, error
 		if err := cfg.FailOn.Set(v); err != nil {
 			return Config{}, nil, fmt.Errorf("MAMORI_FAIL_ON: %w", err)
 		}
+	}
+	if v := getenv("MAMORI_CHECK_EXPOSED_PATHS"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return Config{}, nil, fmt.Errorf("MAMORI_CHECK_EXPOSED_PATHS: %q is not a valid boolean (true/false)", v)
+		}
+		cfg.CheckExposedPaths = b
 	}
 
 	fs, _ := registerFlags(&cfg)

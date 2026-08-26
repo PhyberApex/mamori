@@ -29,7 +29,7 @@ func scanOne(t *testing.T, handler http.Handler) []scanner.Finding {
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 
-	findings := scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, []string{srv.URL}, 1, nil)
+	findings := scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, nil, []string{srv.URL}, 1, nil)
 	if len(findings) != 10 {
 		t.Fatalf("Scan() returned %d findings, want 10", len(findings))
 	}
@@ -84,7 +84,7 @@ func TestScanSkipsBodyFetchWhenNoBodyCheckersConfigured(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, []string{srv.URL}, 1, nil)
+	scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, nil, []string{srv.URL}, 1, nil)
 	if gotMethod != http.MethodHead {
 		t.Errorf("request method = %q, want %q (HEAD should be tried first when no body checkers are configured)", gotMethod, http.MethodHead)
 	}
@@ -96,7 +96,7 @@ func TestScanRunsBodyCheckersWhenConfigured(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	findings := scanner.Scan(t.Context(), srv.Client(), nil, scanner.DefaultBodyCheckers(), []string{srv.URL}, 1, nil)
+	findings := scanner.Scan(t.Context(), srv.Client(), nil, scanner.DefaultBodyCheckers(), nil, []string{srv.URL}, 1, nil)
 	if len(findings) != 1 {
 		t.Fatalf("Scan() returned %d findings, want 1", len(findings))
 	}
@@ -115,7 +115,7 @@ func TestScanFlagsMixedContentOnHTTPSTarget(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	findings := scanner.Scan(t.Context(), srv.Client(), nil, scanner.DefaultBodyCheckers(), []string{srv.URL}, 1, nil)
+	findings := scanner.Scan(t.Context(), srv.Client(), nil, scanner.DefaultBodyCheckers(), nil, []string{srv.URL}, 1, nil)
 	if len(findings) != 1 {
 		t.Fatalf("Scan() returned %d findings, want 1: %+v", len(findings), findings)
 	}
@@ -135,7 +135,7 @@ func TestScanCombinesHeaderAndBodyCheckerFindings(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	findings := scanner.Scan(t.Context(), srv.Client(), []scanner.Checker{scanner.ContentTypeOptionsChecker{}}, scanner.DefaultBodyCheckers(), []string{srv.URL}, 1, nil)
+	findings := scanner.Scan(t.Context(), srv.Client(), []scanner.Checker{scanner.ContentTypeOptionsChecker{}}, scanner.DefaultBodyCheckers(), nil, []string{srv.URL}, 1, nil)
 	if len(findings) != 2 {
 		t.Fatalf("Scan() returned %d findings, want 2 (1 header + 1 body)", len(findings))
 	}
@@ -152,7 +152,7 @@ func TestScanCoversMultipleURLs(t *testing.T) {
 	srvB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	t.Cleanup(srvB.Close)
 
-	findings := scanner.Scan(t.Context(), srvA.Client(), scanner.DefaultCheckers(), nil, []string{srvA.URL, srvB.URL}, 2, nil)
+	findings := scanner.Scan(t.Context(), srvA.Client(), scanner.DefaultCheckers(), nil, nil, []string{srvA.URL, srvB.URL}, 2, nil)
 	if len(findings) != 20 {
 		t.Fatalf("Scan() returned %d findings, want 20 (10 per URL)", len(findings))
 	}
@@ -163,7 +163,7 @@ func TestScanUnreachableTargetYieldsErrorFinding(t *testing.T) {
 	unreachable := srv.URL
 	srv.Close()
 
-	findings := scanner.Scan(t.Context(), http.DefaultClient, scanner.DefaultCheckers(), nil, []string{unreachable}, 1, nil)
+	findings := scanner.Scan(t.Context(), http.DefaultClient, scanner.DefaultCheckers(), nil, nil, []string{unreachable}, 1, nil)
 	if len(findings) != 1 {
 		t.Fatalf("Scan() returned %d findings, want 1 error finding", len(findings))
 	}
@@ -190,7 +190,7 @@ func TestScanServerTimeoutYieldsErrorFinding(t *testing.T) {
 	})
 
 	client := &http.Client{Timeout: 50 * time.Millisecond}
-	findings := scanner.Scan(t.Context(), client, scanner.DefaultCheckers(), nil, []string{srv.URL}, 1, nil)
+	findings := scanner.Scan(t.Context(), client, scanner.DefaultCheckers(), nil, nil, []string{srv.URL}, 1, nil)
 	if len(findings) != 1 {
 		t.Fatalf("Scan() returned %d findings, want 1 error finding", len(findings))
 	}
@@ -210,7 +210,7 @@ func TestScanReportsAllTargetsDespiteFailures(t *testing.T) {
 	deadURL := dead.URL
 	dead.Close()
 
-	findings := scanner.Scan(t.Context(), http.DefaultClient, scanner.DefaultCheckers(), nil, []string{deadURL, healthy.URL}, 2, nil)
+	findings := scanner.Scan(t.Context(), http.DefaultClient, scanner.DefaultCheckers(), nil, nil, []string{deadURL, healthy.URL}, 2, nil)
 
 	byURL := map[string][]scanner.Finding{}
 	for _, f := range findings {
@@ -242,7 +242,7 @@ func TestScanRunsTargetsConcurrently(t *testing.T) {
 
 	client := &http.Client{Timeout: 5 * time.Second}
 	urls := []string{srv.URL + "/a", srv.URL + "/b", srv.URL + "/c"}
-	findings := scanner.Scan(t.Context(), client, scanner.DefaultCheckers(), nil, urls, targets, nil)
+	findings := scanner.Scan(t.Context(), client, scanner.DefaultCheckers(), nil, nil, urls, targets, nil)
 
 	assertAllStatus(t, findings, scanner.StatusMissing)
 	if len(findings) != targets*10 {
@@ -273,7 +273,7 @@ func TestScanBoundsConcurrencyToPoolSize(t *testing.T) {
 	for i := range urls {
 		urls[i] = srv.URL + "/" + string(rune('a'+i))
 	}
-	scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, urls, workers, nil)
+	scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, nil, urls, workers, nil)
 
 	if p := peak.Load(); p > workers {
 		t.Errorf("peak concurrent requests = %d, want at most %d", p, workers)
@@ -289,7 +289,7 @@ func TestScanSendsOriginProbeAndFlagsReflectedCORSWithCredentials(t *testing.T) 
 	}))
 	t.Cleanup(srv.Close)
 
-	findings := scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, []string{srv.URL}, 1, nil)
+	findings := scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, nil, []string{srv.URL}, 1, nil)
 
 	var corsFindings []scanner.Finding
 	for _, f := range findings {
@@ -335,7 +335,7 @@ func TestScanSkipsFailedProbeRatherThanErroringTarget(t *testing.T) {
 	})
 
 	client := &http.Client{Timeout: 50 * time.Millisecond}
-	findings := scanner.Scan(t.Context(), client, scanner.DefaultCheckers(), nil, []string{srv.URL}, 1, nil)
+	findings := scanner.Scan(t.Context(), client, scanner.DefaultCheckers(), nil, nil, []string{srv.URL}, 1, nil)
 
 	if len(findings) == 0 {
 		t.Fatal("Scan() returned no findings, want the plain request's findings despite the probe request failing")
@@ -352,7 +352,7 @@ func TestScanPreservesTargetOrder(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	urls := []string{srv.URL + "/a", srv.URL + "/b", srv.URL + "/c"}
-	findings := scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, urls, 3, nil)
+	findings := scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, nil, urls, 3, nil)
 
 	var seen []string
 	for _, f := range findings {
@@ -381,7 +381,7 @@ func TestScanAppliesCustomHeadersToRequests(t *testing.T) {
 	headers := http.Header{}
 	headers.Set("Authorization", "Bearer xyz")
 	headers.Set("Cookie", "session=abc")
-	scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, []string{srv.URL}, 1, headers)
+	scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, nil, []string{srv.URL}, 1, headers)
 
 	if gotAuth != "Bearer xyz" {
 		t.Errorf("Authorization header = %q, want %q", gotAuth, "Bearer xyz")
@@ -400,9 +400,243 @@ func TestScanAppliesCustomHeadersWhenFetchingBody(t *testing.T) {
 
 	headers := http.Header{}
 	headers.Set("Authorization", "Bearer xyz")
-	scanner.Scan(t.Context(), srv.Client(), nil, scanner.DefaultBodyCheckers(), []string{srv.URL}, 1, headers)
+	scanner.Scan(t.Context(), srv.Client(), nil, scanner.DefaultBodyCheckers(), nil, []string{srv.URL}, 1, headers)
 
 	if gotAuth != "Bearer xyz" {
 		t.Errorf("Authorization header = %q, want %q", gotAuth, "Bearer xyz")
+	}
+}
+
+func TestScanIssuesNoExposureRequestsWhenNoPathCheckersConfigured(t *testing.T) {
+	var count int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&count, 1)
+	}))
+	t.Cleanup(srv.Close)
+
+	// checkers is nil, not DefaultCheckers(): CORSChecker is an OriginProber
+	// and would add its own probe request, muddying a count that's meant to
+	// isolate exposure-check requests specifically.
+	scanner.Scan(t.Context(), srv.Client(), nil, nil, nil, []string{srv.URL}, 1, nil)
+
+	if got := atomic.LoadInt32(&count); got != 1 {
+		t.Errorf("server received %d requests, want 1 (only the plain scan request; no exposure probes when no PathChecker is configured)", got)
+	}
+}
+
+func TestScanConfiguredPathHitsProduceExposedFindings(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.env":
+			w.WriteHeader(http.StatusOK)
+		case "/backup.zip":
+			w.WriteHeader(http.StatusForbidden)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	findings := scanner.Scan(t.Context(), srv.Client(), nil, nil, scanner.PathCheckersFor(true, nil), []string{srv.URL}, 1, nil)
+
+	byPath := map[string]scanner.Finding{}
+	for _, f := range findings {
+		if f.Status != scanner.StatusExposed {
+			t.Errorf("unexpected non-exposed finding: %+v", f)
+			continue
+		}
+		byPath[f.Header] = f
+	}
+	if len(byPath) != 2 {
+		t.Fatalf("got %d exposed findings, want 2 (.env and backup.zip; every other default path returned 404): %+v", len(byPath), findings)
+	}
+	if env := byPath[".env"]; env.Severity != scanner.SeverityHigh {
+		t.Errorf(".env severity = %q, want %q (200 hit at its configured severity)", env.Severity, scanner.SeverityHigh)
+	}
+	if bak := byPath["backup.zip"]; bak.Severity != scanner.SeverityLow {
+		t.Errorf("backup.zip severity = %q, want %q (403 hit one step below its configured medium severity)", bak.Severity, scanner.SeverityLow)
+	}
+}
+
+func TestScanSkipsExposureProbesWhenBaselineIsNotNotFound(t *testing.T) {
+	var mu sync.Mutex
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		mu.Unlock()
+		if r.URL.Path == "/" {
+			return
+		}
+		// A soft-404/catch-all server: every path, including the random
+		// baseline probe, answers 200 instead of 404.
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	findings := scanner.Scan(t.Context(), srv.Client(), nil, nil, scanner.PathCheckersFor(true, nil), []string{srv.URL}, 1, nil)
+
+	if len(findings) != 1 {
+		t.Fatalf("Scan() returned %d findings, want exactly 1 (the skip notice): %+v", len(findings), findings)
+	}
+	f := findings[0]
+	if f.Status != scanner.StatusError {
+		t.Errorf("Status = %q, want %q", f.Status, scanner.StatusError)
+	}
+	if f.Message == "" {
+		t.Error("Message is empty, want an explanation of why the check was skipped")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	for _, p := range paths {
+		if p == "/.env" || p == "/.git/config" {
+			t.Errorf("configured path %q was probed, want none of the configured paths probed once the baseline probe is unreliable", p)
+		}
+	}
+	if len(paths) != 2 {
+		t.Errorf("server received %d requests, want 2 (the plain scan request and the baseline probe): %v", len(paths), paths)
+	}
+}
+
+func TestScanExposureProbesAreRootRelativeToTargetOrigin(t *testing.T) {
+	var mu sync.Mutex
+	var sawRootRelativeProbe bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/known.txt" {
+			mu.Lock()
+			sawRootRelativeProbe = true
+			mu.Unlock()
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	pathCheckers := []scanner.PathChecker{scanner.NewExposureChecker("known.txt", scanner.SeverityMedium)}
+	target := srv.URL + "/app/subdir/"
+	scanner.Scan(t.Context(), srv.Client(), nil, nil, pathCheckers, []string{target}, 1, nil)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !sawRootRelativeProbe {
+		t.Error("no probe request for /known.txt observed, want it probed root-relative to the origin regardless of the target URL's own /app/subdir/ path")
+	}
+}
+
+func TestScanExposureBaselineProbePathIsRandomizedPerTarget(t *testing.T) {
+	var mu sync.Mutex
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		mu.Unlock()
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	pathCheckers := []scanner.PathChecker{scanner.NewExposureChecker("known.txt", scanner.SeverityMedium)}
+	known := map[string]bool{"/": true, "/known.txt": true}
+
+	baselinePath := func() string {
+		mu.Lock()
+		paths = nil
+		mu.Unlock()
+		scanner.Scan(t.Context(), srv.Client(), nil, nil, pathCheckers, []string{srv.URL}, 1, nil)
+		mu.Lock()
+		defer mu.Unlock()
+		for _, p := range paths {
+			if !known[p] {
+				return p
+			}
+		}
+		t.Fatal("no baseline probe path observed")
+		return ""
+	}
+
+	first := baselinePath()
+	second := baselinePath()
+	if first == second {
+		t.Errorf("baseline probe path %q repeated across two targets, want a fresh random path each time", first)
+	}
+}
+
+func TestScanExposurePathsAreProbedConcurrently(t *testing.T) {
+	known := map[string]bool{"/a": true, "/b": true, "/c": true}
+	var wg sync.WaitGroup
+	wg.Add(3)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if known[r.URL.Path] {
+			// Blocks until all 3 configured-path probes have arrived: a
+			// prober that issued these sequentially would deadlock here,
+			// since each request waits on its siblings before any of them
+			// gets a response.
+			wg.Done()
+			wg.Wait()
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	pathCheckers := []scanner.PathChecker{
+		scanner.NewExposureChecker("a", scanner.SeverityMedium),
+		scanner.NewExposureChecker("b", scanner.SeverityMedium),
+		scanner.NewExposureChecker("c", scanner.SeverityMedium),
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	findings := scanner.Scan(t.Context(), client, nil, nil, pathCheckers, []string{srv.URL}, 1, nil)
+
+	for _, f := range findings {
+		if f.Status == scanner.StatusError {
+			t.Errorf("unexpected error finding: %+v", f)
+		}
+	}
+}
+
+func TestScanSkipsFailedExposurePathProbeRatherThanErroringTarget(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/known.txt" {
+			<-release
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(func() {
+		close(release)
+		srv.Close()
+	})
+
+	client := &http.Client{Timeout: 50 * time.Millisecond}
+	pathCheckers := []scanner.PathChecker{scanner.NewExposureChecker("known.txt", scanner.SeverityMedium)}
+	findings := scanner.Scan(t.Context(), client, nil, nil, pathCheckers, []string{srv.URL}, 1, nil)
+
+	for _, f := range findings {
+		if f.Status == scanner.StatusError {
+			t.Errorf("got error finding %+v, want the failed path probe skipped rather than erroring the whole target", f)
+		}
+	}
+}
+
+func TestScanExposureExtraPathAloneEnablesCategoryEndToEnd(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/debug.log" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	pathCheckers := scanner.PathCheckersFor(false, []string{"debug.log"})
+	findings := scanner.Scan(t.Context(), srv.Client(), nil, nil, pathCheckers, []string{srv.URL}, 1, nil)
+
+	var exposed []scanner.Finding
+	for _, f := range findings {
+		if f.Status == scanner.StatusExposed {
+			exposed = append(exposed, f)
+		}
+	}
+	if len(exposed) != 1 || exposed[0].Header != "debug.log" {
+		t.Fatalf("exposed findings = %+v, want exactly one for the extra path \"debug.log\"", exposed)
 	}
 }

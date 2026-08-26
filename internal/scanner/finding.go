@@ -11,8 +11,14 @@ const (
 	// no-op, so it doesn't provide the protection the header exists for.
 	// Kept distinct from StatusPass so scans don't silently treat a
 	// self-defeating value (e.g. max-age=0) as a clean bill of health.
-	StatusWeak  Status = "weak"
-	StatusError Status = "error"
+	StatusWeak Status = "weak"
+	// StatusExposed marks a PathChecker Finding whose probed path was
+	// confirmed reachable (a 200/206/403 response). Kept distinct from
+	// Missing/Weak, which both describe absent-or-defective *header* state
+	// on the target URL itself — Exposed instead describes a path beyond the
+	// target URL that shouldn't be reachable at all.
+	StatusExposed Status = "exposed"
+	StatusError   Status = "error"
 )
 
 type Severity string
@@ -75,7 +81,12 @@ func (s *Severity) Set(v string) error {
 // downstream jq pipelines. Without a tag, encoding/json would emit the
 // exported (capitalized) field name instead.
 type Finding struct {
-	URL       string   `json:"url"`
+	URL string `json:"url"`
+	// Header names the specific thing a Finding reports on: a header name
+	// for a Checker/BodyChecker Finding, or the probed path (e.g.
+	// ".git/config") for a PathChecker Finding. Reused rather than adding a
+	// path-specific field so every existing reporter renders both kinds
+	// with no reporter-specific changes.
 	Header    string   `json:"header"`
 	Status    Status   `json:"status"`
 	Severity  Severity `json:"severity"`
@@ -98,8 +109,8 @@ type Finding struct {
 // severity or Status, since that's the entire point of suppressing it.
 // Otherwise a StatusError always fails, regardless of threshold, since a
 // scan that couldn't complete shouldn't silently report success; a
-// Missing/Weak finding fails once its severity reaches threshold; a Pass
-// never fails.
+// Missing/Weak/Exposed finding fails once its severity reaches threshold; a
+// Pass never fails.
 func (f Finding) Fails(threshold Severity) bool {
 	if threshold == "" {
 		return false
@@ -110,7 +121,7 @@ func (f Finding) Fails(threshold Severity) bool {
 	if f.Status == StatusError {
 		return true
 	}
-	if f.Status != StatusMissing && f.Status != StatusWeak {
+	if f.Status != StatusMissing && f.Status != StatusWeak && f.Status != StatusExposed {
 		return false
 	}
 	return f.Severity.AtLeast(threshold)

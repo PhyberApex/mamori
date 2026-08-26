@@ -24,6 +24,11 @@ type fileConfig struct {
 	Timeout      *string               `yaml:"timeout"`
 	Output       *Output               `yaml:"output"`
 	Suppressions []scanner.Suppression `yaml:"suppressions"`
+	// CheckExposedPaths and ExposedPaths mirror the -check-exposed-paths and
+	// -exposed-path flags. ExposedPaths has no env var, following the -H
+	// flag's precedent for a repeatable list-shaped setting.
+	CheckExposedPaths *bool    `yaml:"checkExposedPaths"`
+	ExposedPaths      []string `yaml:"exposedPaths"`
 }
 
 // resolveConfigPath decides which config file, if any, supplies the config
@@ -96,6 +101,13 @@ func applyFileConfig(cfg *Config, fc fileConfig, path string) error {
 		return fmt.Errorf("%s: %w", path, err)
 	}
 	cfg.Suppressions = fc.Suppressions
+	if fc.CheckExposedPaths != nil {
+		cfg.CheckExposedPaths = *fc.CheckExposedPaths
+	}
+	// Additive, not a replace: applyFileConfig runs before the -exposed-path
+	// flag is parsed, so appending here lets a repeated -exposed-path flag
+	// extend what the config file already set rather than clobbering it.
+	cfg.ExtraExposedPaths = append(cfg.ExtraExposedPaths, fc.ExposedPaths...)
 	return nil
 }
 

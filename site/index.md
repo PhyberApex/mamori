@@ -24,3 +24,4 @@ Each check mamori performs is documented here. Every finding includes a link to 
 | `X-XSS-Protection` | low | [docs](checks/x-xss-protection) |
 | `<script>` / `<link>` (SRI) | low | [docs](checks/subresource-integrity) |
 | Mixed Content | medium | [docs](checks/mixed-content) |
+| Sensitive Path Exposure (opt-in) | high / medium / low | [docs](checks/sensitive-path-exposure) |

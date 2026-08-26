@@ -213,6 +213,69 @@ func TestRunSuppressedFindingDoesNotTripFailOnButStaysInOutput(t *testing.T) {
 	}
 }
 
+func TestRunDefaultDoesNotProbeExposedPaths(t *testing.T) {
+	var probed bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/.git/config" {
+			probed = true
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	if err := run([]string{srv.URL}, nil, io.Discard); err != nil {
+		t.Fatalf("run() returned error: %v", err)
+	}
+	if probed {
+		t.Error("run() probed /.git/config with -check-exposed-paths unset, want the category off by default")
+	}
+}
+
+func TestRunCheckExposedPathsFlagFindsExposedPath(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/.env" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	var buf bytes.Buffer
+	if err := run([]string{"-check-exposed-paths", "-o", "json", srv.URL}, nil, &buf); err != nil {
+		t.Fatalf("run() returned error: %v", err)
+	}
+
+	var sawExposed bool
+	for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
+		var f map[string]any
+		if err := json.Unmarshal([]byte(line), &f); err != nil {
+			t.Fatalf("line is not valid JSON: %v\nline: %s", err, line)
+		}
+		if f["status"] == "exposed" && f["header"] == ".env" {
+			sawExposed = true
+		}
+	}
+	if !sawExposed {
+		t.Errorf("run() with -check-exposed-paths did not report .env as exposed\noutput:\n%s", buf.String())
+	}
+}
+
+func TestRunFailOnGatesOnExposedFinding(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/.env" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	err := run([]string{"-check-exposed-paths", "-fail-on", "high", srv.URL}, nil, io.Discard)
+	if !errors.Is(err, errFailThreshold) {
+		t.Errorf("run() with an exposed .env and -fail-on high returned %v, want errFailThreshold", err)
+	}
+}
+
 func TestRunFailOnFlagOverridesEnvVar(t *testing.T) {
 	url := headerServer(t, nil)
 	t.Setenv("MAMORI_FAIL_ON", "low")

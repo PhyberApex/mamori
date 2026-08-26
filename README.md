@@ -69,6 +69,8 @@ Full reference for every check mamori performs is available at
 | `-o` | `terminal` | output format: `terminal`, `json`, or `sarif` |
 | `-fail-on` | `none` | exit non-zero on findings at or above this severity: `low`, `medium`, `high`, or `none` |
 | `-H` | *(none)* | custom request header `'Key: Value'`, e.g. `-H 'Authorization: Bearer xyz'` (repeatable) |
+| `-check-exposed-paths` | `false` | probe each target's origin for well-known sensitive paths (`.git`, `.env`, backups, ...) |
+| `-exposed-path` | *(none)* | extra path to probe in addition to the default list (repeatable; also enables `-check-exposed-paths`) |
 | `-config` | *(none)* | path to a YAML config file |
 | `-v`, `-version` | `false` | print the version and exit, performing no scan |
 
@@ -92,6 +94,21 @@ finding is responsible.
 auth (e.g. `-H 'Authorization: Bearer xyz' -H 'Cookie: session=abc'`). It
 has no environment variable or config file equivalent.
 
+`-check-exposed-paths` turns on an additional, opt-in check category: for
+each target, mamori probes its origin for well-known sensitive paths
+(version control metadata, `.env` files, credential stores, common backup
+files) and flags any that respond `200`/`206` (readable) or `403` (exists,
+but blocked). This is off by default and separate from every other check,
+since it issues requests to paths the user never named as a target — a more
+intrusive scan than reading headers on the URL that was actually passed in.
+`-exposed-path` adds an extra path to the built-in list (repeatable) and, on
+its own, also turns the category on — supplying a path can't be a silent
+no-op. Before probing any configured path for a target, mamori first sends
+one request to a randomized, deliberately-nonexistent path at that target's
+origin; if the target doesn't answer that with `404`, it's treated as
+unreliable for this check (e.g. a catch-all/soft-404 server) and mamori
+reports a single error for that target instead of probing anything else.
+
 ### Environment variables
 
 Each flag can also be set via an environment variable; CLI flags take
@@ -103,7 +120,10 @@ precedence.
 | `MAMORI_TIMEOUT` | `-timeout` |
 | `MAMORI_OUTPUT` | `-o` |
 | `MAMORI_FAIL_ON` | `-fail-on` |
+| `MAMORI_CHECK_EXPOSED_PATHS` | `-check-exposed-paths` |
 | `MAMORI_CONFIG` | `-config` |
+
+`-exposed-path` has no environment variable equivalent, the same as `-H`.
 
 ### Config file
 
@@ -117,6 +137,9 @@ output: json
 targets:
   - https://example.com
   - https://example.org
+checkExposedPaths: true
+exposedPaths:
+  - debug.log
 suppressions:
   - header: Content-Security-Policy
     host: https://cdn.example.com

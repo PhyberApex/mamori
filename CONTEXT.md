@@ -13,8 +13,16 @@ The result of running one Checker against one target — a header name, a Status
 _Avoid_: Result, Issue, Violation.
 
 **Status**:
-Where a header landed after a Checker ran: `pass` (present and effective), `missing` (absent or blank), `weak` (present but a known no-op value), `error` (the scan itself failed, e.g. an unreachable target).
+Where a header landed after a Checker ran: `pass` (present and effective), `missing` (absent or blank), `weak` (present but a known no-op value), `exposed` (a PathChecker's probed path was confirmed reachable), `error` (the scan itself failed, e.g. an unreachable target).
 _Avoid_: Result, Outcome.
+
+**PathChecker**:
+A checker category parallel to Checker (headers) and BodyChecker (body): declares a path to probe at a target's origin and judges the probe response's status code rather than headers or a body. Off by default and opt-in only (`-check-exposed-paths` / `MAMORI_CHECK_EXPOSED_PATHS` / `checkExposedPaths`, plus `-exposed-path` / `exposedPaths` to extend the built-in path list), since it issues requests to paths beyond the one the user named as a target. Before probing any configured path for a target, Scan sends one baseline probe to a randomized, deliberately-nonexistent path; a target that doesn't answer that with `404` is treated as unreliable for this check (a soft-404/catch-all server) and produces a single `error` Finding instead of probing anything configured.
+_Avoid_: Prober — too close to OriginProber, a distinct existing mechanism (see below) that probes the *same* target URL with a synthetic header rather than a *different* path.
+
+**Exposed**:
+A Status for a PathChecker Finding whose probed path came back `200`/`206` (a full-severity hit, the path is directly readable) or `403` (still a hit — the server treated the path differently from an unrecognized one — but one severity step down, since access is at least blocked). Kept distinct from `missing`/`weak`, which both describe header state on the target URL itself, not a separate path's reachability.
+_Avoid_: Found, Discovered — too generic; `exposed` names the specific problem (a sensitive path is reachable), matching how `weak` names its problem rather than using a generic "Invalid".
 
 **Weak**:
 A Status for a header that is present but whose value provides none of the protection the header exists for. Kept distinct from `missing` because "isn't set" and "set but useless" are different problems for a reader to fix.
