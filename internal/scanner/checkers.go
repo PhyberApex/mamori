@@ -25,6 +25,7 @@ func DefaultCheckers() []Checker {
 		PermissionsPolicyChecker{},
 		BannerDisclosureChecker{},
 		CORSChecker{},
+		XSSProtectionChecker{},
 	}
 }
 
@@ -315,6 +316,77 @@ func corpWeakness(value string) (weak bool, message string) {
 	default:
 		return true, fmt.Sprintf("%q is not same-site, same-origin, or cross-origin and provides no protection", value)
 	}
+}
+
+const xssProtectionReference = "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-XSS-Protection"
+
+// XSSProtectionChecker inverts the "more of the header is better" pattern
+// every other Checker in this file follows. X-XSS-Protection controls a
+// legacy browser XSS filter that current browsers have removed (Chrome 78+,
+// Edge) or never implemented (Firefox), and *enabling* it is itself a
+// documented exploit vector on browsers that still honor it — mode=block in
+// particular has been used as an XS-Leak side-channel. So pass is exactly
+// the explicit disable value "0"; any enabled or unrecognized value is weak;
+// absence is missing (low severity — nudges toward the unambiguous "0"
+// rather than trusting browser defaults).
+type XSSProtectionChecker struct{}
+
+func (XSSProtectionChecker) Check(headers http.Header) []Finding {
+	return checkValue(
+		headers,
+		"X-XSS-Protection",
+		SeverityLow,
+		xssProtectionReference,
+		xssProtectionWeakness,
+	)
+}
+
+// xssProtectionEnabledMessage is shared by every recognized "enabled"
+// variant (1, 1; mode=block, 1; report=<URI>) rather than split per
+// directive: the fix is the same regardless of which enabled variant was
+// used, so a per-directive message would only add noise.
+const xssProtectionEnabledMessage = "enabling this legacy XSS filter is not a safe substitute for the explicit \"0\" disable: it has a documented history of exploitable behavior (including an XS-Leak side-channel via mode=block), and modern browsers (Chrome 78+, Edge, Firefox) have removed or never implemented the feature entirely"
+
+func xssProtectionWeakness(value string) (weak bool, message string) {
+	if value == "0" {
+		return false, ""
+	}
+	if isEnabledXSSProtectionValue(value) {
+		return true, xssProtectionEnabledMessage
+	}
+	return true, fmt.Sprintf("%q is not a recognized X-XSS-Protection value", value)
+}
+
+// isEnabledXSSProtectionValue reports whether value is "1" optionally
+// followed by the directives the spec defines for the legacy filter
+// (mode=block, report=<URI>). Anything else — a bare unrecognized token, or
+// "1" combined with a directive this header doesn't define — falls through
+// to the distinct "unrecognized value" message instead of being lumped in
+// with the known-enabled variants.
+func isEnabledXSSProtectionValue(value string) bool {
+	directives := strings.Split(value, ";")
+	if strings.TrimSpace(directives[0]) != "1" {
+		return false
+	}
+	for _, directive := range directives[1:] {
+		name, val, found := strings.Cut(strings.TrimSpace(directive), "=")
+		if !found {
+			return false
+		}
+		switch strings.ToLower(strings.TrimSpace(name)) {
+		case "mode":
+			if !strings.EqualFold(strings.TrimSpace(val), "block") {
+				return false
+			}
+		case "report":
+			if strings.TrimSpace(val) == "" {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 const cookieReference = "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html"

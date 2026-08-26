@@ -31,6 +31,7 @@ func TestRunAllFansOutAcrossDefaultCheckers(t *testing.T) {
 		"Cross-Origin-Embedder-Policy": scanner.StatusMissing,
 		"Cross-Origin-Resource-Policy": scanner.StatusMissing,
 		"Permissions-Policy":           scanner.StatusMissing,
+		"X-XSS-Protection":             scanner.StatusMissing,
 	}
 	if len(findings) != len(want) {
 		t.Fatalf("RunAll() returned %d findings, want %d", len(findings), len(want))

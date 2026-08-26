@@ -21,6 +21,7 @@ var allSecurityHeaders = map[string]string{
 	"Cross-Origin-Embedder-Policy": "require-corp",
 	"Cross-Origin-Resource-Policy": "same-origin",
 	"Permissions-Policy":           "geolocation=()",
+	"X-XSS-Protection":             "0",
 }
 
 func scanOne(t *testing.T, handler http.Handler) []scanner.Finding {
@@ -29,8 +30,8 @@ func scanOne(t *testing.T, handler http.Handler) []scanner.Finding {
 	t.Cleanup(srv.Close)
 
 	findings := scanner.Scan(t.Context(), srv.Client(), scanner.DefaultCheckers(), nil, []string{srv.URL}, 1, nil)
-	if len(findings) != 9 {
-		t.Fatalf("Scan() returned %d findings, want 9", len(findings))
+	if len(findings) != 10 {
+		t.Fatalf("Scan() returned %d findings, want 10", len(findings))
 	}
 	for _, f := range findings {
 		if f.URL != srv.URL {
@@ -152,8 +153,8 @@ func TestScanCoversMultipleURLs(t *testing.T) {
 	t.Cleanup(srvB.Close)
 
 	findings := scanner.Scan(t.Context(), srvA.Client(), scanner.DefaultCheckers(), nil, []string{srvA.URL, srvB.URL}, 2, nil)
-	if len(findings) != 18 {
-		t.Fatalf("Scan() returned %d findings, want 18 (9 per URL)", len(findings))
+	if len(findings) != 20 {
+		t.Fatalf("Scan() returned %d findings, want 20 (10 per URL)", len(findings))
 	}
 }
 
@@ -218,8 +219,8 @@ func TestScanReportsAllTargetsDespiteFailures(t *testing.T) {
 	if got := len(byURL[deadURL]); got != 1 {
 		t.Errorf("dead target has %d findings, want 1 error finding", got)
 	}
-	if got := len(byURL[healthy.URL]); got != 9 {
-		t.Errorf("healthy target has %d findings, want 9", got)
+	if got := len(byURL[healthy.URL]); got != 10 {
+		t.Errorf("healthy target has %d findings, want 10", got)
 	}
 }
 
@@ -244,8 +245,8 @@ func TestScanRunsTargetsConcurrently(t *testing.T) {
 	findings := scanner.Scan(t.Context(), client, scanner.DefaultCheckers(), nil, urls, targets, nil)
 
 	assertAllStatus(t, findings, scanner.StatusMissing)
-	if len(findings) != targets*9 {
-		t.Fatalf("Scan() returned %d findings, want %d", len(findings), targets*9)
+	if len(findings) != targets*10 {
+		t.Fatalf("Scan() returned %d findings, want %d", len(findings), targets*10)
 	}
 }
 
