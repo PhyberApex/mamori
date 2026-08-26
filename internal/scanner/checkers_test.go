@@ -24,6 +24,7 @@ func TestCheckersIdentity(t *testing.T) {
 		{scanner.COEPChecker{}, "Cross-Origin-Embedder-Policy", scanner.SeverityLow, "require-corp"},
 		{scanner.CORPChecker{}, "Cross-Origin-Resource-Policy", scanner.SeverityMedium, "same-origin"},
 		{scanner.PermissionsPolicyChecker{}, "Permissions-Policy", scanner.SeverityMedium, "geolocation=()"},
+		{scanner.XSSProtectionChecker{}, "X-XSS-Protection", scanner.SeverityLow, "0"},
 	}
 
 	for _, tt := range tests {
@@ -45,12 +46,22 @@ func TestCheckersIdentity(t *testing.T) {
 				t.Error("Reference is empty, want a docs URL")
 			}
 
-			present := tt.checker.Check(http.Header{tt.wantHeader: {tt.validValue}})
+			// Built via Set rather than a map literal so the key is
+			// canonicalized the same way net/http canonicalizes headers
+			// parsed off the wire — a raw literal like "X-XSS-Protection"
+			// (whose canonical form is "X-Xss-Protection") wouldn't be
+			// found by Check()'s own Get()/Values() calls, which always
+			// canonicalize the name they look up.
+			presentHeaders := http.Header{}
+			presentHeaders.Set(tt.wantHeader, tt.validValue)
+			present := tt.checker.Check(presentHeaders)
 			if present[0].Status != scanner.StatusPass {
 				t.Errorf("Status with valid value %q = %q, want %q", tt.validValue, present[0].Status, scanner.StatusPass)
 			}
 
-			empty := tt.checker.Check(http.Header{tt.wantHeader: {""}})
+			emptyHeaders := http.Header{}
+			emptyHeaders.Set(tt.wantHeader, "")
+			empty := tt.checker.Check(emptyHeaders)
 			if empty[0].Status != scanner.StatusMissing {
 				t.Errorf("Status with empty header value = %q, want %q", empty[0].Status, scanner.StatusMissing)
 			}
@@ -327,6 +338,91 @@ func TestCORPWeakValues(t *testing.T) {
 				t.Error("Message is empty, want an explanation")
 			}
 		})
+	}
+}
+
+func TestXSSProtectionWeakValues(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"enabled with no directives", "1"},
+		{"enabled with mode=block", "1; mode=block"},
+		{"enabled with report", "1; report=https://example.com/csp-report"},
+		{"unrecognized value", "banana"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			headers := http.Header{}
+			headers.Set("X-XSS-Protection", tt.value)
+			findings := scanner.XSSProtectionChecker{}.Check(headers)
+			if findings[0].Status != scanner.StatusWeak {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+			}
+			if findings[0].Severity != scanner.SeverityLow {
+				t.Errorf("Severity = %q, want %q", findings[0].Severity, scanner.SeverityLow)
+			}
+			if findings[0].Message == "" {
+				t.Error("Message is empty, want an explanation")
+			}
+		})
+	}
+}
+
+// TestXSSProtectionEnabledVariantsShareOneMessage pins the Agent Brief's
+// explicit decision against per-directive weak messages: every recognized
+// "enabled" variant gets the same shared message regardless of which
+// directive was used, and that message is distinct from the one an
+// unrecognized value gets.
+func TestXSSProtectionEnabledVariantsShareOneMessage(t *testing.T) {
+	enabledVariants := []string{"1", "1; mode=block", "1; report=https://example.com/csp-report"}
+
+	var sharedMessage string
+	for _, value := range enabledVariants {
+		headers := http.Header{}
+		headers.Set("X-XSS-Protection", value)
+		findings := scanner.XSSProtectionChecker{}.Check(headers)
+		if sharedMessage == "" {
+			sharedMessage = findings[0].Message
+			continue
+		}
+		if findings[0].Message != sharedMessage {
+			t.Errorf("Message for %q = %q, want the same shared message as %q: %q", value, findings[0].Message, enabledVariants[0], sharedMessage)
+		}
+	}
+
+	unrecognizedHeaders := http.Header{}
+	unrecognizedHeaders.Set("X-XSS-Protection", "banana")
+	unrecognized := scanner.XSSProtectionChecker{}.Check(unrecognizedHeaders)
+	if unrecognized[0].Message == sharedMessage {
+		t.Error("unrecognized value got the same message as the enabled variants, want a distinct message")
+	}
+}
+
+func TestXSSProtectionAcceptsExplicitDisable(t *testing.T) {
+	tests := []string{"0", " 0 ", "0 "}
+	for _, value := range tests {
+		t.Run(value, func(t *testing.T) {
+			headers := http.Header{}
+			headers.Set("X-XSS-Protection", value)
+			findings := scanner.XSSProtectionChecker{}.Check(headers)
+			if findings[0].Status != scanner.StatusPass {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
+			}
+		})
+	}
+}
+
+// TestXSSProtectionSkipsBlankDuplicate matches checkValue's documented
+// behavior for every other Checker: a blank duplicate occurrence (e.g. a
+// misconfigured proxy appending an empty header instead of leaving the
+// origin's alone) is skipped for validation rather than treated as a weak
+// value, so it can't downgrade an otherwise-strong header.
+func TestXSSProtectionSkipsBlankDuplicate(t *testing.T) {
+	headers := http.Header{"X-Xss-Protection": {"0", ""}}
+	findings := scanner.XSSProtectionChecker{}.Check(headers)
+	if findings[0].Status != scanner.StatusPass {
+		t.Errorf("Status = %q, want %q (blank duplicate should not downgrade a strong value)", findings[0].Status, scanner.StatusPass)
 	}
 }
 
