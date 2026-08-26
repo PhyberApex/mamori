@@ -34,3 +34,4 @@ Unlike mamori's other Cross-Origin-* checks, this finding is reported at low sev
 ## Further reading
 
 - [MDN: Cross-Origin-Embedder-Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cross-Origin-Embedder-Policy)
+- [OWASP: Secure Headers](https://owasp.org/www-project-secure-headers/)
