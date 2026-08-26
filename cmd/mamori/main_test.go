@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -174,6 +176,40 @@ func TestRunVersionShorthandFlagPrintsVersion(t *testing.T) {
 	}
 	if got := buf.String(); !strings.Contains(got, version) {
 		t.Errorf("run() with -v wrote %q, want it to contain %q", got, version)
+	}
+}
+
+func TestRunSuppressedFindingDoesNotTripFailOnButStaysInOutput(t *testing.T) {
+	url := headerServer(t, nil) // every header missing, including high severity
+
+	configPath := filepath.Join(t.TempDir(), "mamori.yaml")
+	config := "suppressions:\n" +
+		"  - host: " + url + "\n"
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatalf("writing config file: %v", err)
+	}
+
+	var buf bytes.Buffer
+	err := run([]string{"-config", configPath, "-fail-on", "high", "-o", "json", url}, nil, &buf)
+	if err != nil {
+		t.Errorf("run() with every finding suppressed returned %v, want nil", err)
+	}
+
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	if len(lines) == 0 || lines[0] == "" {
+		t.Fatalf("run() wrote no findings, want suppressed findings still reported\noutput:\n%s", buf.String())
+	}
+	for _, line := range lines {
+		var f map[string]any
+		if err := json.Unmarshal([]byte(line), &f); err != nil {
+			t.Fatalf("line is not valid JSON: %v\nline: %s", err, line)
+		}
+		if f["suppressed"] != true {
+			t.Errorf("finding %v suppressed = %v, want true", f, f["suppressed"])
+		}
+		if f["status"] != "missing" {
+			t.Errorf("finding %v status = %v, want unchanged %q", f, f["status"], "missing")
+		}
 	}
 }
 
