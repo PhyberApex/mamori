@@ -405,9 +405,10 @@ func (CacheControlChecker) Check(headers http.Header) []Finding {
 }
 
 // cacheControlWeakness flags a value that lacks a directive actually
-// preventing storage: no-store and private are the only directives that keep
-// a response out of shared/private caches respectively. no-cache alone only
-// forces revalidation without preventing storage, and a bare public,
+// preventing storage: no-store keeps a response out of every cache, and
+// private keeps it out of shared caches (proxy/CDN) while still allowing the
+// browser's own cache to store it — either is enough to pass. no-cache alone
+// only forces revalidation without preventing storage, and a bare public,
 // max-age=N with nothing else, or a value with only unrecognized directives,
 // all leave the response cacheable by any shared cache (proxy/CDN) in the
 // path.
