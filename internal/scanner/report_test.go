@@ -92,6 +92,36 @@ func TestTerminalReporterShowsWeakMessage(t *testing.T) {
 	}
 }
 
+func TestTerminalReporterShowsExposedFinding(t *testing.T) {
+	findings := []scanner.Finding{
+		{
+			URL:       "https://a.example",
+			Header:    ".git/config",
+			Status:    scanner.StatusExposed,
+			Severity:  scanner.SeverityHigh,
+			Message:   "responded 200: the path is directly readable",
+			Reference: "https://owasp.example/exposure",
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.TerminalReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{"EXPOSED", ".git/config", "responded 200: the path is directly readable", "https://owasp.example/exposure"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\noutput:\n%s", want, out)
+		}
+	}
+
+	//nolint:gosec // G101 false positive: ANSI color assertion, not credentials
+	if !strings.Contains(out, "\x1b[31mEXPOSED\x1b[0m") {
+		t.Errorf("EXPOSED tag for high-severity finding is not red\noutput:\n%q", out)
+	}
+}
+
 func TestTerminalReporterShowsErrorMessage(t *testing.T) {
 	findings := []scanner.Finding{
 		{

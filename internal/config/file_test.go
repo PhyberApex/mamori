@@ -265,6 +265,53 @@ suppressions:
 	}
 }
 
+func TestResolveConfigFileLoadsCheckExposedPathsAndExposedPaths(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `
+checkExposedPaths: true
+exposedPaths:
+  - debug.log
+  - old-backup.sql
+`)
+
+	cfg, _, err := config.Resolve([]string{"-config", path}, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if !cfg.CheckExposedPaths {
+		t.Error("CheckExposedPaths = false, want true from config file")
+	}
+	want := []string{"debug.log", "old-backup.sql"}
+	if len(cfg.ExtraExposedPaths) != len(want) {
+		t.Fatalf("ExtraExposedPaths = %v, want %v", cfg.ExtraExposedPaths, want)
+	}
+	for i, p := range want {
+		if cfg.ExtraExposedPaths[i] != p {
+			t.Errorf("ExtraExposedPaths[%d] = %q, want %q", i, cfg.ExtraExposedPaths[i], p)
+		}
+	}
+}
+
+func TestResolveExposedPathFlagExtendsConfigFileList(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `
+exposedPaths:
+  - debug.log
+`)
+
+	cfg, _, err := config.Resolve([]string{"-config", path, "-exposed-path", "old-backup.sql"}, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	want := map[string]bool{"debug.log": true, "old-backup.sql": true}
+	if len(cfg.ExtraExposedPaths) != len(want) {
+		t.Fatalf("ExtraExposedPaths = %v, want both the config-file and flag entries", cfg.ExtraExposedPaths)
+	}
+	for _, p := range cfg.ExtraExposedPaths {
+		if !want[p] {
+			t.Errorf("unexpected ExtraExposedPaths entry %q", p)
+		}
+	}
+}
+
 func TestResolveWithNoConfigFilePresentIsUnchanged(t *testing.T) {
 	t.Chdir(t.TempDir())
 

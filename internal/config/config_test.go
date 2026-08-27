@@ -188,6 +188,75 @@ func TestResolveDefaultsToNoHeaders(t *testing.T) {
 	}
 }
 
+func TestResolveDefaultsToExposedPathsDisabled(t *testing.T) {
+	cfg, _, err := config.Resolve(nil, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.CheckExposedPaths {
+		t.Error("CheckExposedPaths = true, want false by default")
+	}
+	if len(cfg.ExtraExposedPaths) != 0 {
+		t.Errorf("ExtraExposedPaths = %v, want empty by default", cfg.ExtraExposedPaths)
+	}
+}
+
+func TestResolveCheckExposedPathsFlag(t *testing.T) {
+	cfg, _, err := config.Resolve([]string{"-check-exposed-paths"}, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if !cfg.CheckExposedPaths {
+		t.Error("CheckExposedPaths = false, want true from -check-exposed-paths")
+	}
+}
+
+func TestResolveCheckExposedPathsEnvVar(t *testing.T) {
+	cfg, _, err := config.Resolve(nil, envWith(map[string]string{"MAMORI_CHECK_EXPOSED_PATHS": "true"}))
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if !cfg.CheckExposedPaths {
+		t.Error("CheckExposedPaths = false, want true from MAMORI_CHECK_EXPOSED_PATHS")
+	}
+}
+
+func TestResolveCheckExposedPathsFlagOverridesEnvVar(t *testing.T) {
+	cfg, _, err := config.Resolve(
+		[]string{"-check-exposed-paths=false"},
+		envWith(map[string]string{"MAMORI_CHECK_EXPOSED_PATHS": "true"}),
+	)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.CheckExposedPaths {
+		t.Error("CheckExposedPaths = true, want false: -check-exposed-paths=false overriding MAMORI_CHECK_EXPOSED_PATHS=true")
+	}
+}
+
+func TestResolveRejectsInvalidCheckExposedPathsEnvVar(t *testing.T) {
+	if _, _, err := config.Resolve(nil, envWith(map[string]string{"MAMORI_CHECK_EXPOSED_PATHS": "sure"})); err == nil {
+		t.Error("Resolve() with MAMORI_CHECK_EXPOSED_PATHS=sure returned nil error, want error")
+	}
+}
+
+func TestResolveParsesRepeatableExposedPathFlag(t *testing.T) {
+	cfg, _, err := config.Resolve(
+		[]string{"-exposed-path", "debug.log", "-exposed-path", "old-backup.sql"},
+		noEnv,
+	)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	want := []string{"debug.log", "old-backup.sql"}
+	if !reflect.DeepEqual([]string(cfg.ExtraExposedPaths), want) {
+		t.Errorf("ExtraExposedPaths = %v, want %v", cfg.ExtraExposedPaths, want)
+	}
+	if cfg.CheckExposedPaths {
+		t.Error("CheckExposedPaths = true, want false: -exposed-path alone doesn't set the boolean flag itself (PathCheckersFor is what treats it as enabling)")
+	}
+}
+
 func TestResolveFailOnNoneFlagOverridesEnv(t *testing.T) {
 	cfg, _, err := config.Resolve(
 		[]string{"-fail-on", "none"},

@@ -121,14 +121,26 @@ func (SarifReporter) Report(findings []Finding, w io.Writer) error {
 // scan never got far enough to check headers — so they're branched on once
 // here rather than in each field separately: a fixed "scan-error" rule, and
 // a level of "error" since a failed scan is not merely a warning.
+// StatusExposed findings reuse Header for a probed path rather than a header
+// name (see Finding.Header), so they get their own wording rather than the
+// "%s header is %s" phrasing every other Status shares.
 func sarifRuleAndResult(f Finding) (sarifRule, sarifResult) {
 	var ruleID, description, message, level string
-	if f.Status == StatusError {
+	switch f.Status {
+	case StatusError:
 		ruleID = "scan-error"
 		description = "The scan could not complete for this target."
 		message = f.Message
 		level = "error"
-	} else {
+	case StatusExposed:
+		ruleID = f.Header
+		description = fmt.Sprintf("Checks whether %s is exposed.", f.Header)
+		message = fmt.Sprintf("%s is exposed", f.Header)
+		if f.Message != "" {
+			message += ": " + f.Message
+		}
+		level = sarifLevel(f.Severity)
+	default:
 		ruleID = f.Header
 		description = fmt.Sprintf("Checks the %s response header.", f.Header)
 		message = fmt.Sprintf("%s header is %s", f.Header, f.Status)

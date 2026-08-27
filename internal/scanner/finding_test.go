@@ -131,6 +131,18 @@ func TestFindingFails(t *testing.T) {
 			want:      true,
 		},
 		{
+			name:      "exposed at threshold fails",
+			finding:   scanner.Finding{Status: scanner.StatusExposed, Severity: scanner.SeverityHigh},
+			threshold: scanner.SeverityHigh,
+			want:      true,
+		},
+		{
+			name:      "exposed below threshold does not fail",
+			finding:   scanner.Finding{Status: scanner.StatusExposed, Severity: scanner.SeverityLow},
+			threshold: scanner.SeverityHigh,
+			want:      false,
+		},
+		{
 			name:      "error always fails regardless of severity",
 			finding:   scanner.Finding{Status: scanner.StatusError, Severity: scanner.SeverityLow},
 			threshold: scanner.SeverityHigh,
