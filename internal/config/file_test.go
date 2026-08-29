@@ -314,9 +314,9 @@ exposedPaths:
 
 func TestResolveConfigFileLoadsHooks(t *testing.T) {
 	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `
-pre_scan_hook: ./disable-waf.sh
-post_scan_hook: ./enable-waf.sh
-hook_timeout: 45s
+preScanHook: ./disable-waf.sh
+postScanHook: ./enable-waf.sh
+hookTimeout: 45s
 `)
 
 	cfg, _, err := config.Resolve([]string{"-config", path}, noEnv)
@@ -335,14 +335,14 @@ hook_timeout: 45s
 }
 
 func TestResolveConfigFileRejectsNonPositiveHookTimeout(t *testing.T) {
-	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `hook_timeout: -1s`)
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `hookTimeout: -1s`)
 	if _, _, err := config.Resolve([]string{"-config", path}, noEnv); err == nil {
-		t.Error("Resolve() with a negative hook_timeout in config file returned nil error, want error")
+		t.Error("Resolve() with a negative hookTimeout in config file returned nil error, want error")
 	}
 }
 
 func TestResolveEnvVarOverridesConfigFileHook(t *testing.T) {
-	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `pre_scan_hook: ./file-pre.sh`)
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `preScanHook: ./file-pre.sh`)
 
 	cfg, _, err := config.Resolve(
 		[]string{"-config", path},

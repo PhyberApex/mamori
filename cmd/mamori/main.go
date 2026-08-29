@@ -84,6 +84,12 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 	if err := reporterFor(cfg.Output).Report(findings, out); err != nil {
 		return err
 	}
+	// hookErr takes priority over -fail-on when both trip: the report above
+	// already surfaced whichever findings crossed the -fail-on threshold, so
+	// the exit code is non-zero either way, but the *hook* failing is the
+	// more actionable, unusual problem (e.g. a WAF that may still be
+	// disabled) and must not be silently swapped for the routine "findings
+	// crossed the threshold" case.
 	if hookErr != nil {
 		return hookErr
 	}

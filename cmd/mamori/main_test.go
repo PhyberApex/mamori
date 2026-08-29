@@ -357,6 +357,26 @@ func TestRunPostScanHookFailureStillReportsFindingsButExitsNonZero(t *testing.T)
 	}
 }
 
+func TestRunPostScanHookFailureTakesPriorityWhenFailOnAlsoTrips(t *testing.T) {
+	url := headerServer(t, nil) // every header missing, including high severity
+
+	var buf bytes.Buffer
+	err := run([]string{"-post-scan-hook", "exit 1", "-fail-on", "high", "-o", "json", url}, nil, &buf)
+	if err == nil {
+		t.Fatal("run() with a failing -post-scan-hook and a tripped -fail-on returned nil error, want error")
+	}
+	// The report already shows which findings crossed the -fail-on
+	// threshold, and the exit code is non-zero either way, so the hook
+	// failure — the more unusual, actionable problem — is what's surfaced,
+	// rather than being silently replaced by the routine fail-on error.
+	if !strings.Contains(err.Error(), "post-scan hook") {
+		t.Errorf("run() error = %q, want it to name the post-scan hook even though -fail-on also tripped", err.Error())
+	}
+	if buf.Len() == 0 {
+		t.Error("run() wrote no findings, want the scan's findings still reported")
+	}
+}
+
 func TestRunPostScanHookNotRunWhenPreScanHookFails(t *testing.T) {
 	url := headerServer(t, strongHeaders())
 	outPath := filepath.Join(t.TempDir(), "ran.txt")

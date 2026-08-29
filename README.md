@@ -169,9 +169,9 @@ suppressions:
   - header: Content-Security-Policy
     host: https://cdn.example.com
   - host: https://legacy.example.com   # header omitted -> suppresses every header for this host
-pre_scan_hook: ./disable-waf.sh
-post_scan_hook: ./enable-waf.sh
-hook_timeout: 30s
+preScanHook: ./disable-waf.sh
+postScanHook: ./enable-waf.sh
+hookTimeout: 30s
 ```
 
 Select a file explicitly with `-config <path>` or `MAMORI_CONFIG=<path>`. If
