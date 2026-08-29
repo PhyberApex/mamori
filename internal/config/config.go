@@ -28,9 +28,10 @@ const (
 )
 
 const (
-	defaultWorkers = 10
-	defaultTimeout = 10 * time.Second
-	defaultOutput  = OutputTerminal
+	defaultWorkers     = 10
+	defaultTimeout     = 10 * time.Second
+	defaultOutput      = OutputTerminal
+	defaultHookTimeout = 30 * time.Second
 )
 
 type Config struct {
@@ -67,6 +68,15 @@ type Config struct {
 	// The zero value (nil) is already the correct default: no extra paths.
 	// Flag + config-file only, no env var, the same pattern -H follows.
 	ExtraExposedPaths ExposedPaths
+	// PreScanHook and PostScanHook are shell commands run once per whole
+	// scan invocation, before any target is scanned and after the scan
+	// completes respectively. The zero value ("") is already the correct
+	// default: no hook configured, no subprocess spawned.
+	PreScanHook  string
+	PostScanHook string
+	// HookTimeout bounds PreScanHook/PostScanHook, independent of Timeout
+	// which only governs per-request HTTP timeouts.
+	HookTimeout time.Duration
 }
 
 // Headers is http.Header under the flag package's Value contract: a defined
@@ -191,6 +201,16 @@ func validateTimeout(d time.Duration) error {
 	return nil
 }
 
+// validateHookTimeout reports whether d satisfies the "positive duration"
+// rule the config-file, env, and flag layers all enforce for -hook-timeout,
+// mirroring validateTimeout since a hook timeout is bound by the same rule.
+func validateHookTimeout(d time.Duration) error {
+	if d <= 0 {
+		return fmt.Errorf("%v is not a positive duration", d)
+	}
+	return nil
+}
+
 // validateSuppressions reports whether every entry in suppressions sets at
 // least one of Header or Host — an entry setting neither is a config error,
 // not a silent no-op, since suppressions has no flag/env layer to fall back
@@ -224,6 +244,9 @@ func registerFlags(cfg *Config) (*flag.FlagSet, *string) {
 	fs.Var(&cfg.Headers, "H", "custom request header 'Key: Value', e.g. -H 'Authorization: Bearer xyz' (repeatable)")
 	fs.BoolVar(&cfg.CheckExposedPaths, "check-exposed-paths", cfg.CheckExposedPaths, "probe each target's origin for well-known sensitive paths (.git, .env, backups, ...); off by default since it requests paths beyond the scanned URL itself")
 	fs.Var(&cfg.ExtraExposedPaths, "exposed-path", "extra path to probe in addition to the default list, e.g. -exposed-path 'debug.log' (repeatable; also enables -check-exposed-paths)")
+	fs.StringVar(&cfg.PreScanHook, "pre-scan-hook", cfg.PreScanHook, "shell command to run once before scanning starts; aborts the scan if it fails")
+	fs.StringVar(&cfg.PostScanHook, "post-scan-hook", cfg.PostScanHook, "shell command to run once after the scan completes")
+	fs.DurationVar(&cfg.HookTimeout, "hook-timeout", cfg.HookTimeout, "timeout for -pre-scan-hook/-post-scan-hook (e.g. 30s)")
 	var configPath string
 	fs.StringVar(&configPath, "config", "", "path to YAML config file (env MAMORI_CONFIG; default: .mamori.yaml in the working directory if present)")
 	return fs, &configPath
@@ -234,7 +257,7 @@ func registerFlags(cfg *Config) (*flag.FlagSet, *string) {
 // process state. The env-resolved values are used as the flag defaults,
 // which encodes the precedence chain and makes -h show effective defaults.
 func Resolve(args []string, getenv func(string) string) (Config, []string, error) {
-	cfg := Config{Workers: defaultWorkers, Timeout: defaultTimeout, Output: defaultOutput}
+	cfg := Config{Workers: defaultWorkers, Timeout: defaultTimeout, Output: defaultOutput, HookTimeout: defaultHookTimeout}
 
 	fileTargets, err := loadConfigLayer(&cfg, args, getenv)
 	if err != nil {
@@ -274,6 +297,19 @@ func Resolve(args []string, getenv func(string) string) (Config, []string, error
 		}
 		cfg.CheckExposedPaths = b
 	}
+	if v := getenv("MAMORI_PRE_SCAN_HOOK"); v != "" {
+		cfg.PreScanHook = v
+	}
+	if v := getenv("MAMORI_POST_SCAN_HOOK"); v != "" {
+		cfg.PostScanHook = v
+	}
+	if v := getenv("MAMORI_HOOK_TIMEOUT"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || validateHookTimeout(d) != nil {
+			return Config{}, nil, fmt.Errorf("MAMORI_HOOK_TIMEOUT: %q is not a positive duration (e.g. 30s)", v)
+		}
+		cfg.HookTimeout = d
+	}
 
 	fs, _ := registerFlags(&cfg)
 	if err := fs.Parse(args); err != nil {
@@ -287,6 +323,9 @@ func Resolve(args []string, getenv func(string) string) (Config, []string, error
 	}
 	if err := validateTimeout(cfg.Timeout); err != nil {
 		return Config{}, nil, fmt.Errorf("-timeout: %w", err)
+	}
+	if err := validateHookTimeout(cfg.HookTimeout); err != nil {
+		return Config{}, nil, fmt.Errorf("-hook-timeout: %w", err)
 	}
 	targets := append(append([]string{}, fileTargets...), fs.Args()...)
 	return cfg, targets, nil

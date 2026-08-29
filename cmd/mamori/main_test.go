@@ -276,6 +276,119 @@ func TestRunFailOnGatesOnExposedFinding(t *testing.T) {
 	}
 }
 
+func TestRunPreScanHookFailureAbortsBeforeAnyRequest(t *testing.T) {
+	var requests int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+	}))
+	t.Cleanup(srv.Close)
+
+	var buf bytes.Buffer
+	err := run([]string{"-pre-scan-hook", "exit 1", srv.URL}, nil, &buf)
+	if err == nil {
+		t.Fatal("run() with a failing -pre-scan-hook returned nil error, want error")
+	}
+	if !strings.Contains(err.Error(), "pre-scan hook") {
+		t.Errorf("run() error = %q, want it to name the pre-scan hook", err.Error())
+	}
+	if requests != 0 {
+		t.Errorf("run() made %d requests to the target, want 0: a failing pre-scan hook must abort before any HTTP request", requests)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("run() wrote %q, want no output when the pre-scan hook aborts the scan", buf.String())
+	}
+}
+
+func TestRunPreScanHookReceivesResolvedTargets(t *testing.T) {
+	url := headerServer(t, strongHeaders())
+	outPath := filepath.Join(t.TempDir(), "targets.txt")
+
+	err := run([]string{"-pre-scan-hook", "printenv MAMORI_HOOK_TARGETS > " + outPath, url}, nil, io.Discard)
+	if err != nil {
+		t.Fatalf("run() returned %v, want nil", err)
+	}
+	//nolint:gosec // G304 false positive: outPath is a t.TempDir() path this test itself constructed, not attacker-controlled input
+	got, readErr := os.ReadFile(outPath)
+	if readErr != nil {
+		t.Fatalf("reading hook output: %v", readErr)
+	}
+	if strings.TrimSpace(string(got)) != url {
+		t.Errorf("MAMORI_HOOK_TARGETS = %q, want %q", strings.TrimSpace(string(got)), url)
+	}
+}
+
+func TestRunPreScanHookReceivesPrePhase(t *testing.T) {
+	url := headerServer(t, strongHeaders())
+	err := run([]string{"-pre-scan-hook", `test "$MAMORI_HOOK_PHASE" = "pre"`, url}, nil, io.Discard)
+	if err != nil {
+		t.Errorf("run() with a pre-scan hook checking MAMORI_HOOK_PHASE returned %v, want nil", err)
+	}
+}
+
+func TestRunPostScanHookRunsAfterScanEvenOnScanError(t *testing.T) {
+	// Nothing listens here, so the scan itself produces a StatusError
+	// finding; the post-scan hook must still run.
+	outPath := filepath.Join(t.TempDir(), "ran.txt")
+	err := run([]string{"-post-scan-hook", "touch " + outPath, "http://127.0.0.1:1"}, nil, io.Discard)
+	if err != nil {
+		t.Errorf("run() returned %v, want nil", err)
+	}
+	if _, statErr := os.Stat(outPath); statErr != nil {
+		t.Errorf("post-scan hook did not run after a scan error: %v", statErr)
+	}
+}
+
+func TestRunPostScanHookFailureStillReportsFindingsButExitsNonZero(t *testing.T) {
+	url := headerServer(t, nil) // every header missing
+
+	var buf bytes.Buffer
+	err := run([]string{"-post-scan-hook", "exit 1", "-o", "json", url}, nil, &buf)
+	if err == nil {
+		t.Fatal("run() with a failing -post-scan-hook returned nil error, want error")
+	}
+	if errors.Is(err, errFailThreshold) {
+		t.Error("run() with a failing -post-scan-hook returned errFailThreshold, want a distinct hook error")
+	}
+	if !strings.Contains(err.Error(), "post-scan hook") {
+		t.Errorf("run() error = %q, want it to name the post-scan hook", err.Error())
+	}
+	if buf.Len() == 0 {
+		t.Error("run() wrote no findings, want the scan's findings still reported despite the post-scan hook failing")
+	}
+}
+
+func TestRunPostScanHookNotRunWhenPreScanHookFails(t *testing.T) {
+	url := headerServer(t, strongHeaders())
+	outPath := filepath.Join(t.TempDir(), "ran.txt")
+
+	err := run([]string{
+		"-pre-scan-hook", "exit 1",
+		"-post-scan-hook", "touch " + outPath,
+		url,
+	}, nil, io.Discard)
+	if err == nil {
+		t.Fatal("run() with a failing -pre-scan-hook returned nil error, want error")
+	}
+	if _, statErr := os.Stat(outPath); statErr == nil {
+		t.Error("post-scan hook ran despite the pre-scan hook failing, want it skipped")
+	}
+}
+
+func TestRunNoHooksConfiguredSpawnsNoSubprocess(t *testing.T) {
+	url := headerServer(t, strongHeaders())
+	if err := run([]string{url}, nil, io.Discard); err != nil {
+		t.Errorf("run() with no hooks configured returned %v, want nil", err)
+	}
+}
+
+func TestRunHookTimeoutFlagBoundsPreScanHook(t *testing.T) {
+	url := headerServer(t, strongHeaders())
+	err := run([]string{"-pre-scan-hook", "sleep 5", "-hook-timeout", "20ms", url}, nil, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Errorf("run() error = %v, want a timeout error", err)
+	}
+}
+
 func TestRunFailOnFlagOverridesEnvVar(t *testing.T) {
 	url := headerServer(t, nil)
 	t.Setenv("MAMORI_FAIL_ON", "low")

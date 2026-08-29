@@ -312,6 +312,50 @@ exposedPaths:
 	}
 }
 
+func TestResolveConfigFileLoadsHooks(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `
+pre_scan_hook: ./disable-waf.sh
+post_scan_hook: ./enable-waf.sh
+hook_timeout: 45s
+`)
+
+	cfg, _, err := config.Resolve([]string{"-config", path}, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.PreScanHook != "./disable-waf.sh" {
+		t.Errorf("PreScanHook = %q, want %q from config file", cfg.PreScanHook, "./disable-waf.sh")
+	}
+	if cfg.PostScanHook != "./enable-waf.sh" {
+		t.Errorf("PostScanHook = %q, want %q from config file", cfg.PostScanHook, "./enable-waf.sh")
+	}
+	if cfg.HookTimeout != 45*time.Second {
+		t.Errorf("HookTimeout = %v, want 45s from config file", cfg.HookTimeout)
+	}
+}
+
+func TestResolveConfigFileRejectsNonPositiveHookTimeout(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `hook_timeout: -1s`)
+	if _, _, err := config.Resolve([]string{"-config", path}, noEnv); err == nil {
+		t.Error("Resolve() with a negative hook_timeout in config file returned nil error, want error")
+	}
+}
+
+func TestResolveEnvVarOverridesConfigFileHook(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `pre_scan_hook: ./file-pre.sh`)
+
+	cfg, _, err := config.Resolve(
+		[]string{"-config", path},
+		envWith(map[string]string{"MAMORI_PRE_SCAN_HOOK": "./env-pre.sh"}),
+	)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.PreScanHook != "./env-pre.sh" {
+		t.Errorf("PreScanHook = %q, want %q from MAMORI_PRE_SCAN_HOOK overriding config file", cfg.PreScanHook, "./env-pre.sh")
+	}
+}
+
 func TestResolveWithNoConfigFilePresentIsUnchanged(t *testing.T) {
 	t.Chdir(t.TempDir())
 
