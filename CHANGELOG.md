@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.0](https://github.com/PhyberApex/mamori/compare/v1.1.0...v1.2.0) (2026-08-29)
+
+
+### Features
+
+* **config:** add pre-scan/post-scan shell command hooks ([#88](https://github.com/PhyberApex/mamori/issues/88)) ([8017dcd](https://github.com/PhyberApex/mamori/commit/8017dcd56c1c3c16f57ecfcde5094ca800612f17))
+* **scanner:** add opt-in sensitive-path exposure checker ([#87](https://github.com/PhyberApex/mamori/issues/87)) ([1897919](https://github.com/PhyberApex/mamori/commit/18979198e973e4497a449d3612331fd560218735))
+* **scanner:** add suppressions config to mark accepted-risk Findings ([#84](https://github.com/PhyberApex/mamori/issues/84)) ([f27e67c](https://github.com/PhyberApex/mamori/commit/f27e67cd89d2ad56fd44f7fc36d595103ce00632)), closes [#59](https://github.com/PhyberApex/mamori/issues/59)
+
 ## [1.1.0](https://github.com/PhyberApex/mamori/compare/v1.0.0...v1.1.0) (2026-08-26)
 
 
