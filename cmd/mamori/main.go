@@ -64,12 +64,34 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+
+	ctx := context.Background()
+	if _, err := runHook(ctx, cfg.PreScanHook, hookPhasePre, urls, cfg.HookTimeout, os.Stderr); err != nil {
+		return err
+	}
+
 	client := &http.Client{Timeout: cfg.Timeout}
 	pathCheckers := scanner.PathCheckersFor(cfg.CheckExposedPaths, cfg.ExtraExposedPaths)
-	findings := scanner.Scan(context.Background(), client, scanner.DefaultCheckers(), scanner.DefaultBodyCheckers(), pathCheckers, urls, cfg.Workers, http.Header(cfg.Headers))
+	findings := scanner.Scan(ctx, client, scanner.DefaultCheckers(), scanner.DefaultBodyCheckers(), pathCheckers, urls, cfg.Workers, http.Header(cfg.Headers))
 	scanner.ApplySuppressions(findings, cfg.Suppressions)
+
+	// The post-scan hook's job (e.g. re-enabling a WAF the pre-scan hook
+	// disabled) must run whether or not the scan produced findings, so its
+	// result is held until after the report is written rather than
+	// short-circuiting here.
+	_, hookErr := runHook(ctx, cfg.PostScanHook, hookPhasePost, urls, cfg.HookTimeout, os.Stderr)
+
 	if err := reporterFor(cfg.Output).Report(findings, out); err != nil {
 		return err
+	}
+	// hookErr takes priority over -fail-on when both trip: the report above
+	// already surfaced whichever findings crossed the -fail-on threshold, so
+	// the exit code is non-zero either way, but the *hook* failing is the
+	// more actionable, unusual problem (e.g. a WAF that may still be
+	// disabled) and must not be silently swapped for the routine "findings
+	// crossed the threshold" case.
+	if hookErr != nil {
+		return hookErr
 	}
 	if scanner.AnyFails(findings, cfg.FailOn) {
 		return errFailThreshold

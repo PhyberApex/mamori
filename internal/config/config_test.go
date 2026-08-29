@@ -36,6 +36,15 @@ func TestResolveDefaults(t *testing.T) {
 	if cfg.FailOn != "" {
 		t.Errorf("FailOn = %q, want zero value (\"none\")", cfg.FailOn)
 	}
+	if cfg.PreScanHook != "" {
+		t.Errorf("PreScanHook = %q, want empty default", cfg.PreScanHook)
+	}
+	if cfg.PostScanHook != "" {
+		t.Errorf("PostScanHook = %q, want empty default", cfg.PostScanHook)
+	}
+	if cfg.HookTimeout != 30*time.Second {
+		t.Errorf("HookTimeout = %v, want default 30s", cfg.HookTimeout)
+	}
 }
 
 func TestResolveEnvOverridesDefaults(t *testing.T) {
@@ -89,6 +98,72 @@ func TestResolveFlagsOverrideEnv(t *testing.T) {
 	}
 	if len(rest) != 1 || rest[0] != "https://a.example" {
 		t.Errorf("remaining args = %v, want [https://a.example]", rest)
+	}
+}
+
+func TestResolveEnvSetsHooks(t *testing.T) {
+	cfg, _, err := config.Resolve(nil, envWith(map[string]string{
+		"MAMORI_PRE_SCAN_HOOK":  "./disable-waf.sh",
+		"MAMORI_POST_SCAN_HOOK": "./enable-waf.sh",
+		"MAMORI_HOOK_TIMEOUT":   "5s",
+	}))
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.PreScanHook != "./disable-waf.sh" {
+		t.Errorf("PreScanHook = %q, want %q from MAMORI_PRE_SCAN_HOOK", cfg.PreScanHook, "./disable-waf.sh")
+	}
+	if cfg.PostScanHook != "./enable-waf.sh" {
+		t.Errorf("PostScanHook = %q, want %q from MAMORI_POST_SCAN_HOOK", cfg.PostScanHook, "./enable-waf.sh")
+	}
+	if cfg.HookTimeout != 5*time.Second {
+		t.Errorf("HookTimeout = %v, want 5s from MAMORI_HOOK_TIMEOUT", cfg.HookTimeout)
+	}
+}
+
+func TestResolveFlagsOverrideHookEnv(t *testing.T) {
+	cfg, _, err := config.Resolve(
+		[]string{"-pre-scan-hook", "./flag-pre.sh", "-post-scan-hook", "./flag-post.sh", "-hook-timeout", "9s"},
+		envWith(map[string]string{
+			"MAMORI_PRE_SCAN_HOOK":  "./env-pre.sh",
+			"MAMORI_POST_SCAN_HOOK": "./env-post.sh",
+			"MAMORI_HOOK_TIMEOUT":   "5s",
+		}),
+	)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.PreScanHook != "./flag-pre.sh" {
+		t.Errorf("PreScanHook = %q, want %q from -pre-scan-hook flag", cfg.PreScanHook, "./flag-pre.sh")
+	}
+	if cfg.PostScanHook != "./flag-post.sh" {
+		t.Errorf("PostScanHook = %q, want %q from -post-scan-hook flag", cfg.PostScanHook, "./flag-post.sh")
+	}
+	if cfg.HookTimeout != 9*time.Second {
+		t.Errorf("HookTimeout = %v, want 9s from -hook-timeout flag", cfg.HookTimeout)
+	}
+}
+
+func TestResolveRejectsInvalidHookTimeoutEnv(t *testing.T) {
+	tests := []struct {
+		name string
+		vars map[string]string
+	}{
+		{"unparseable hook timeout", map[string]string{"MAMORI_HOOK_TIMEOUT": "fast"}},
+		{"negative hook timeout", map[string]string{"MAMORI_HOOK_TIMEOUT": "-1s"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, _, err := config.Resolve(nil, envWith(tt.vars)); err == nil {
+				t.Errorf("Resolve() with %v returned nil error, want error", tt.vars)
+			}
+		})
+	}
+}
+
+func TestResolveRejectsNonPositiveHookTimeoutFlag(t *testing.T) {
+	if _, _, err := config.Resolve([]string{"-hook-timeout", "0"}, noEnv); err == nil {
+		t.Error("Resolve() with -hook-timeout 0 returned nil error, want error")
 	}
 }
 

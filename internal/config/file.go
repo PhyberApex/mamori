@@ -29,6 +29,9 @@ type fileConfig struct {
 	// flag's precedent for a repeatable list-shaped setting.
 	CheckExposedPaths *bool    `yaml:"checkExposedPaths"`
 	ExposedPaths      []string `yaml:"exposedPaths"`
+	PreScanHook       *string  `yaml:"preScanHook"`
+	PostScanHook      *string  `yaml:"postScanHook"`
+	HookTimeout       *string  `yaml:"hookTimeout"`
 }
 
 // resolveConfigPath decides which config file, if any, supplies the config
@@ -96,6 +99,19 @@ func applyFileConfig(cfg *Config, fc fileConfig, path string) error {
 	}
 	if fc.Output != nil {
 		cfg.Output = *fc.Output
+	}
+	if fc.PreScanHook != nil {
+		cfg.PreScanHook = *fc.PreScanHook
+	}
+	if fc.PostScanHook != nil {
+		cfg.PostScanHook = *fc.PostScanHook
+	}
+	if fc.HookTimeout != nil {
+		d, err := time.ParseDuration(*fc.HookTimeout)
+		if err != nil || validateHookTimeout(d) != nil {
+			return fmt.Errorf("%s: hookTimeout: %q is not a positive duration (e.g. 30s)", path, *fc.HookTimeout)
+		}
+		cfg.HookTimeout = d
 	}
 	if err := validateSuppressions(fc.Suppressions); err != nil {
 		return fmt.Errorf("%s: %w", path, err)
