@@ -12,16 +12,18 @@ import (
 // BodyChecker inspects the parsed HTML response body, unlike Checker which
 // only inspects headers. Judging Subresource Integrity requires resolving
 // each script/link tag's URL against the page's own origin, so a BodyChecker
-// needs the target URL alongside the body.
+// needs the target URL alongside the body — already parsed, and already the
+// final post-redirect URL the body was fetched from, the same as the
+// respURL Checker receives (see the Checker doc comment).
 type BodyChecker interface {
-	CheckBody(body []byte, targetURL string) []Finding
+	CheckBody(body []byte, targetURL *url.URL) []Finding
 }
 
 func DefaultBodyCheckers() []BodyChecker {
 	return []BodyChecker{SRIChecker{}, MixedContentChecker{}}
 }
 
-func RunAllBody(checkers []BodyChecker, body []byte, targetURL string) []Finding {
+func RunAllBody(checkers []BodyChecker, body []byte, targetURL *url.URL) []Finding {
 	var findings []Finding
 	for _, c := range checkers {
 		findings = append(findings, c.CheckBody(body, targetURL)...)
@@ -66,13 +68,9 @@ const sriReference = "https://cheatsheetseries.owasp.org/cheatsheets/Subresource
 // don't need it.
 type SRIChecker struct{}
 
-func (SRIChecker) CheckBody(body []byte, targetURL string) []Finding {
-	base, err := url.Parse(targetURL)
-	if err != nil {
-		return nil
-	}
+func (SRIChecker) CheckBody(body []byte, targetURL *url.URL) []Finding {
 	return walkElements(body, func(n *html.Node) *Finding {
-		return sriFinding(n, base)
+		return sriFinding(n, targetURL)
 	})
 }
 

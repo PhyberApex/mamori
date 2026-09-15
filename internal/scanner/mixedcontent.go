@@ -52,13 +52,12 @@ var mixedContentLinkRels = []string{
 // the first place.
 type MixedContentChecker struct{}
 
-func (MixedContentChecker) CheckBody(body []byte, targetURL string) []Finding {
-	base, err := url.Parse(targetURL)
-	if err != nil || base.Scheme != "https" {
+func (MixedContentChecker) CheckBody(body []byte, targetURL *url.URL) []Finding {
+	if targetURL.Scheme != "https" {
 		return nil
 	}
 	return walkElements(body, func(n *html.Node) *Finding {
-		return mixedContentFinding(n, base)
+		return mixedContentFinding(n, targetURL)
 	})
 }
 

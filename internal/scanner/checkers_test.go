@@ -2,11 +2,19 @@ package scanner_test
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/PhyberApex/mamori/internal/scanner"
 )
+
+// testURL stands in for the response URL every Checker.Check call in this
+// file needs. It's https:// so HSTSChecker, the one Checker that reads it,
+// behaves like every other Checker here (judging the header normally); tests
+// that specifically exercise HSTSChecker's http:// behavior parse their own
+// URL instead.
+var testURL, _ = url.Parse("https://example.com")
 
 func TestCheckersIdentity(t *testing.T) {
 	tests := []struct {
@@ -29,7 +37,7 @@ func TestCheckersIdentity(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.wantHeader, func(t *testing.T) {
-			missing := tt.checker.Check(http.Header{})
+			missing := tt.checker.Check(http.Header{}, testURL)
 			if len(missing) != 1 {
 				t.Fatalf("Check() on empty headers returned %d findings, want 1", len(missing))
 			}
@@ -54,14 +62,14 @@ func TestCheckersIdentity(t *testing.T) {
 			// canonicalize the name they look up.
 			presentHeaders := http.Header{}
 			presentHeaders.Set(tt.wantHeader, tt.validValue)
-			present := tt.checker.Check(presentHeaders)
+			present := tt.checker.Check(presentHeaders, testURL)
 			if present[0].Status != scanner.StatusPass {
 				t.Errorf("Status with valid value %q = %q, want %q", tt.validValue, present[0].Status, scanner.StatusPass)
 			}
 
 			emptyHeaders := http.Header{}
 			emptyHeaders.Set(tt.wantHeader, "")
-			empty := tt.checker.Check(emptyHeaders)
+			empty := tt.checker.Check(emptyHeaders, testURL)
 			if empty[0].Status != scanner.StatusMissing {
 				t.Errorf("Status with empty header value = %q, want %q", empty[0].Status, scanner.StatusMissing)
 			}
@@ -81,7 +89,7 @@ func TestHSTSWeakValues(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			findings := scanner.HSTSChecker{}.Check(http.Header{"Strict-Transport-Security": {tt.value}})
+			findings := scanner.HSTSChecker{}.Check(http.Header{"Strict-Transport-Security": {tt.value}}, testURL)
 			if findings[0].Status != scanner.StatusWeak {
 				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
 			}
@@ -100,7 +108,7 @@ func TestHSTSAcceptsValidMaxAge(t *testing.T) {
 	}
 	for _, value := range tests {
 		t.Run(value, func(t *testing.T) {
-			findings := scanner.HSTSChecker{}.Check(http.Header{"Strict-Transport-Security": {value}})
+			findings := scanner.HSTSChecker{}.Check(http.Header{"Strict-Transport-Security": {value}}, testURL)
 			if findings[0].Status != scanner.StatusPass {
 				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
 			}
@@ -114,7 +122,7 @@ func TestHSTSFlagsWeakAmongDuplicateHeaders(t *testing.T) {
 	// whichever value happens to be first, so the reported status must not
 	// depend on that order.
 	headers := http.Header{"Strict-Transport-Security": {"max-age=63072000", "max-age=0"}}
-	findings := scanner.HSTSChecker{}.Check(headers)
+	findings := scanner.HSTSChecker{}.Check(headers, testURL)
 	if findings[0].Status != scanner.StatusWeak {
 		t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
 	}
@@ -123,9 +131,37 @@ func TestHSTSFlagsWeakAmongDuplicateHeaders(t *testing.T) {
 	}
 
 	reversed := http.Header{"Strict-Transport-Security": {"max-age=0", "max-age=63072000"}}
-	findings = scanner.HSTSChecker{}.Check(reversed)
+	findings = scanner.HSTSChecker{}.Check(reversed, testURL)
 	if findings[0].Status != scanner.StatusWeak {
 		t.Errorf("Status = %q, want %q (order should not matter)", findings[0].Status, scanner.StatusWeak)
+	}
+}
+
+// TestHSTSNotApplicableOverHTTP pins the Applicable glossary concept (see
+// CONTEXT.md): a response that arrived over plain HTTP gets no HSTS Finding
+// at all, for a present, weak, or missing header alike, since browsers
+// ignore Strict-Transport-Security outside HTTPS regardless of its value.
+func TestHSTSNotApplicableOverHTTP(t *testing.T) {
+	httpURL, err := url.Parse("http://example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name    string
+		headers http.Header
+	}{
+		{"present and strong", http.Header{"Strict-Transport-Security": {"max-age=63072000"}}},
+		{"present and weak", http.Header{"Strict-Transport-Security": {"max-age=0"}}},
+		{"missing", http.Header{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			findings := scanner.HSTSChecker{}.Check(tt.headers, httpURL)
+			if len(findings) != 0 {
+				t.Errorf("Check() on an http:// response = %+v, want no findings (HSTS cannot apply to plain HTTP)", findings)
+			}
+		})
 	}
 }
 
@@ -149,7 +185,7 @@ func TestCheckValueIgnoresBlankDuplicateOccurrence(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			findings := tt.checker.Check(tt.headers)
+			findings := tt.checker.Check(tt.headers, testURL)
 			if findings[0].Status != scanner.StatusPass {
 				t.Errorf("Status = %q, want %q (blank duplicate should not downgrade a strong value)", findings[0].Status, scanner.StatusPass)
 			}
@@ -161,7 +197,7 @@ func TestContentTypeOptionsWeakValues(t *testing.T) {
 	tests := []string{"garbage", "sniff"}
 	for _, value := range tests {
 		t.Run(value, func(t *testing.T) {
-			findings := scanner.ContentTypeOptionsChecker{}.Check(http.Header{"X-Content-Type-Options": {value}})
+			findings := scanner.ContentTypeOptionsChecker{}.Check(http.Header{"X-Content-Type-Options": {value}}, testURL)
 			if findings[0].Status != scanner.StatusWeak {
 				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
 			}
@@ -176,7 +212,7 @@ func TestContentTypeOptionsAcceptsCaseInsensitiveValidValue(t *testing.T) {
 	tests := []string{"nosniff", "NOSNIFF", "NoSniff"}
 	for _, value := range tests {
 		t.Run(value, func(t *testing.T) {
-			findings := scanner.ContentTypeOptionsChecker{}.Check(http.Header{"X-Content-Type-Options": {value}})
+			findings := scanner.ContentTypeOptionsChecker{}.Check(http.Header{"X-Content-Type-Options": {value}}, testURL)
 			if findings[0].Status != scanner.StatusPass {
 				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
 			}
@@ -188,7 +224,7 @@ func TestFrameOptionsWeakValues(t *testing.T) {
 	tests := []string{"ALLOW-FROM https://example.com", "allowall", "garbage"}
 	for _, value := range tests {
 		t.Run(value, func(t *testing.T) {
-			findings := scanner.FrameOptionsChecker{}.Check(http.Header{"X-Frame-Options": {value}})
+			findings := scanner.FrameOptionsChecker{}.Check(http.Header{"X-Frame-Options": {value}}, testURL)
 			if findings[0].Status != scanner.StatusWeak {
 				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
 			}
@@ -203,7 +239,7 @@ func TestFrameOptionsAcceptsCaseInsensitiveValidValues(t *testing.T) {
 	tests := []string{"deny", "DENY", "sameorigin", "SAMEORIGIN"}
 	for _, value := range tests {
 		t.Run(value, func(t *testing.T) {
-			findings := scanner.FrameOptionsChecker{}.Check(http.Header{"X-Frame-Options": {value}})
+			findings := scanner.FrameOptionsChecker{}.Check(http.Header{"X-Frame-Options": {value}}, testURL)
 			if findings[0].Status != scanner.StatusPass {
 				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
 			}
@@ -215,7 +251,7 @@ func TestReferrerPolicyWeakValues(t *testing.T) {
 	tests := []string{"unsafe-url", "UNSAFE-URL", "Unsafe-Url"}
 	for _, value := range tests {
 		t.Run(value, func(t *testing.T) {
-			findings := scanner.ReferrerPolicyChecker{}.Check(http.Header{"Referrer-Policy": {value}})
+			findings := scanner.ReferrerPolicyChecker{}.Check(http.Header{"Referrer-Policy": {value}}, testURL)
 			if findings[0].Status != scanner.StatusWeak {
 				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
 			}
@@ -235,7 +271,7 @@ func TestReferrerPolicyWeakFallbackList(t *testing.T) {
 	}
 	for _, value := range tests {
 		t.Run(value, func(t *testing.T) {
-			findings := scanner.ReferrerPolicyChecker{}.Check(http.Header{"Referrer-Policy": {value}})
+			findings := scanner.ReferrerPolicyChecker{}.Check(http.Header{"Referrer-Policy": {value}}, testURL)
 			if findings[0].Status != scanner.StatusWeak {
 				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
 			}
@@ -257,7 +293,7 @@ func TestCOOPWeakValues(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			findings := scanner.COOPChecker{}.Check(http.Header{"Cross-Origin-Opener-Policy": {tt.value}})
+			findings := scanner.COOPChecker{}.Check(http.Header{"Cross-Origin-Opener-Policy": {tt.value}}, testURL)
 			if findings[0].Status != scanner.StatusWeak {
 				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
 			}
@@ -276,7 +312,7 @@ func TestCOOPAcceptsCaseInsensitiveValidValues(t *testing.T) {
 	}
 	for _, value := range tests {
 		t.Run(value, func(t *testing.T) {
-			findings := scanner.COOPChecker{}.Check(http.Header{"Cross-Origin-Opener-Policy": {value}})
+			findings := scanner.COOPChecker{}.Check(http.Header{"Cross-Origin-Opener-Policy": {value}}, testURL)
 			if findings[0].Status != scanner.StatusPass {
 				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
 			}
@@ -294,7 +330,7 @@ func TestCOEPWeakValues(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			findings := scanner.COEPChecker{}.Check(http.Header{"Cross-Origin-Embedder-Policy": {tt.value}})
+			findings := scanner.COEPChecker{}.Check(http.Header{"Cross-Origin-Embedder-Policy": {tt.value}}, testURL)
 			if findings[0].Status != scanner.StatusWeak {
 				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
 			}
@@ -312,7 +348,7 @@ func TestCOEPAcceptsCaseInsensitiveValidValues(t *testing.T) {
 	}
 	for _, value := range tests {
 		t.Run(value, func(t *testing.T) {
-			findings := scanner.COEPChecker{}.Check(http.Header{"Cross-Origin-Embedder-Policy": {value}})
+			findings := scanner.COEPChecker{}.Check(http.Header{"Cross-Origin-Embedder-Policy": {value}}, testURL)
 			if findings[0].Status != scanner.StatusPass {
 				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
 			}
@@ -330,7 +366,7 @@ func TestCORPWeakValues(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			findings := scanner.CORPChecker{}.Check(http.Header{"Cross-Origin-Resource-Policy": {tt.value}})
+			findings := scanner.CORPChecker{}.Check(http.Header{"Cross-Origin-Resource-Policy": {tt.value}}, testURL)
 			if findings[0].Status != scanner.StatusWeak {
 				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
 			}
@@ -355,7 +391,7 @@ func TestXSSProtectionWeakValues(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			headers := http.Header{}
 			headers.Set("X-XSS-Protection", tt.value)
-			findings := scanner.XSSProtectionChecker{}.Check(headers)
+			findings := scanner.XSSProtectionChecker{}.Check(headers, testURL)
 			if findings[0].Status != scanner.StatusWeak {
 				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
 			}
@@ -381,7 +417,7 @@ func TestXSSProtectionEnabledVariantsShareOneMessage(t *testing.T) {
 	for _, value := range enabledVariants {
 		headers := http.Header{}
 		headers.Set("X-XSS-Protection", value)
-		findings := scanner.XSSProtectionChecker{}.Check(headers)
+		findings := scanner.XSSProtectionChecker{}.Check(headers, testURL)
 		if sharedMessage == "" {
 			sharedMessage = findings[0].Message
 			continue
@@ -393,7 +429,7 @@ func TestXSSProtectionEnabledVariantsShareOneMessage(t *testing.T) {
 
 	unrecognizedHeaders := http.Header{}
 	unrecognizedHeaders.Set("X-XSS-Protection", "banana")
-	unrecognized := scanner.XSSProtectionChecker{}.Check(unrecognizedHeaders)
+	unrecognized := scanner.XSSProtectionChecker{}.Check(unrecognizedHeaders, testURL)
 	if unrecognized[0].Message == sharedMessage {
 		t.Error("unrecognized value got the same message as the enabled variants, want a distinct message")
 	}
@@ -405,7 +441,7 @@ func TestXSSProtectionAcceptsExplicitDisable(t *testing.T) {
 		t.Run(value, func(t *testing.T) {
 			headers := http.Header{}
 			headers.Set("X-XSS-Protection", value)
-			findings := scanner.XSSProtectionChecker{}.Check(headers)
+			findings := scanner.XSSProtectionChecker{}.Check(headers, testURL)
 			if findings[0].Status != scanner.StatusPass {
 				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
 			}
@@ -420,7 +456,7 @@ func TestXSSProtectionAcceptsExplicitDisable(t *testing.T) {
 // value, so it can't downgrade an otherwise-strong header.
 func TestXSSProtectionSkipsBlankDuplicate(t *testing.T) {
 	headers := http.Header{"X-Xss-Protection": {"0", ""}}
-	findings := scanner.XSSProtectionChecker{}.Check(headers)
+	findings := scanner.XSSProtectionChecker{}.Check(headers, testURL)
 	if findings[0].Status != scanner.StatusPass {
 		t.Errorf("Status = %q, want %q (blank duplicate should not downgrade a strong value)", findings[0].Status, scanner.StatusPass)
 	}
@@ -439,7 +475,7 @@ func TestCSPWeakValues(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			findings := scanner.CSPChecker{}.Check(http.Header{"Content-Security-Policy": {tt.value}})
+			findings := scanner.CSPChecker{}.Check(http.Header{"Content-Security-Policy": {tt.value}}, testURL)
 			if findings[0].Status != scanner.StatusWeak {
 				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
 			}
@@ -454,7 +490,7 @@ func TestCORPAcceptsCaseInsensitiveValidValues(t *testing.T) {
 	tests := []string{"same-site", "SAME-SITE", "same-origin", "SAME-ORIGIN"}
 	for _, value := range tests {
 		t.Run(value, func(t *testing.T) {
-			findings := scanner.CORPChecker{}.Check(http.Header{"Cross-Origin-Resource-Policy": {value}})
+			findings := scanner.CORPChecker{}.Check(http.Header{"Cross-Origin-Resource-Policy": {value}}, testURL)
 			if findings[0].Status != scanner.StatusPass {
 				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
 			}
@@ -470,7 +506,7 @@ func TestCSPAcceptsStrongValues(t *testing.T) {
 	}
 	for _, value := range tests {
 		t.Run(value, func(t *testing.T) {
-			findings := scanner.CSPChecker{}.Check(http.Header{"Content-Security-Policy": {value}})
+			findings := scanner.CSPChecker{}.Check(http.Header{"Content-Security-Policy": {value}}, testURL)
 			if findings[0].Status != scanner.StatusPass {
 				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
 			}
@@ -479,7 +515,7 @@ func TestCSPAcceptsStrongValues(t *testing.T) {
 }
 
 func TestCookieCheckerNoCookiesProducesNoFindings(t *testing.T) {
-	findings := scanner.CookieChecker{}.Check(http.Header{})
+	findings := scanner.CookieChecker{}.Check(http.Header{}, testURL)
 	if len(findings) != 0 {
 		t.Errorf("Check() on headers with no Set-Cookie returned %d findings, want 0", len(findings))
 	}
@@ -488,7 +524,7 @@ func TestCookieCheckerNoCookiesProducesNoFindings(t *testing.T) {
 func TestCookieCheckerFullyLockedDownCookieProducesNoFindings(t *testing.T) {
 	findings := scanner.CookieChecker{}.Check(http.Header{
 		"Set-Cookie": {"session_id=abc123; Secure; HttpOnly; SameSite=Strict"},
-	})
+	}, testURL)
 	if len(findings) != 0 {
 		t.Errorf("Check() on a fully-locked-down cookie returned %d findings, want 0: %+v", len(findings), findings)
 	}
@@ -497,7 +533,7 @@ func TestCookieCheckerFullyLockedDownCookieProducesNoFindings(t *testing.T) {
 func TestCookieCheckerSameSiteLaxIsAccepted(t *testing.T) {
 	findings := scanner.CookieChecker{}.Check(http.Header{
 		"Set-Cookie": {"session_id=abc123; Secure; HttpOnly; SameSite=Lax"},
-	})
+	}, testURL)
 	if len(findings) != 0 {
 		t.Errorf("Check() with SameSite=Lax returned %d findings, want 0: %+v", len(findings), findings)
 	}
@@ -506,7 +542,7 @@ func TestCookieCheckerSameSiteLaxIsAccepted(t *testing.T) {
 func TestCookieCheckerMissingSecure(t *testing.T) {
 	findings := scanner.CookieChecker{}.Check(http.Header{
 		"Set-Cookie": {"session_id=abc123; HttpOnly; SameSite=Strict"},
-	})
+	}, testURL)
 	if len(findings) != 1 {
 		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
 	}
@@ -527,7 +563,7 @@ func TestCookieCheckerMissingSecure(t *testing.T) {
 func TestCookieCheckerMissingHttpOnly(t *testing.T) {
 	findings := scanner.CookieChecker{}.Check(http.Header{
 		"Set-Cookie": {"session_id=abc123; Secure; SameSite=Strict"},
-	})
+	}, testURL)
 	if len(findings) != 1 {
 		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
 	}
@@ -555,7 +591,7 @@ func TestCookieCheckerWeakSameSite(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			findings := scanner.CookieChecker{}.Check(http.Header{"Set-Cookie": {tt.value}})
+			findings := scanner.CookieChecker{}.Check(http.Header{"Set-Cookie": {tt.value}}, testURL)
 			if len(findings) != 1 {
 				t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
 			}
@@ -578,7 +614,7 @@ func TestCookieCheckerWeakSameSite(t *testing.T) {
 func TestCookieCheckerCompletelyInsecureCookieProducesThreeFindings(t *testing.T) {
 	findings := scanner.CookieChecker{}.Check(http.Header{
 		"Set-Cookie": {"session_id=abc123"},
-	})
+	}, testURL)
 	if len(findings) != 3 {
 		t.Fatalf("Check() returned %d findings, want 3: %+v", len(findings), findings)
 	}
@@ -595,7 +631,7 @@ func TestCookieCheckerEvaluatesMultipleCookiesIndependently(t *testing.T) {
 			"session_id=abc123; Secure; HttpOnly; SameSite=Strict",
 			"tracking_id=xyz789",
 		},
-	})
+	}, testURL)
 	if len(findings) != 3 {
 		t.Fatalf("Check() returned %d findings, want 3 (only from tracking_id): %+v", len(findings), findings)
 	}
@@ -611,21 +647,21 @@ func TestReferrerPolicyAcceptsFallbackListEndingStrong(t *testing.T) {
 	// a later recognized, safe token — that's the effective policy applied.
 	findings := scanner.ReferrerPolicyChecker{}.Check(http.Header{
 		"Referrer-Policy": {"unsafe-url, strict-origin-when-cross-origin"},
-	})
+	}, testURL)
 	if findings[0].Status != scanner.StatusPass {
 		t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
 	}
 }
 
 func TestBannerDisclosureNoHeadersProducesNoFindings(t *testing.T) {
-	findings := scanner.BannerDisclosureChecker{}.Check(http.Header{})
+	findings := scanner.BannerDisclosureChecker{}.Check(http.Header{}, testURL)
 	if len(findings) != 0 {
 		t.Errorf("Check() on headers with no Server/X-Powered-By returned %d findings, want 0: %+v", len(findings), findings)
 	}
 }
 
 func TestBannerDisclosureFlagsServerHeader(t *testing.T) {
-	findings := scanner.BannerDisclosureChecker{}.Check(http.Header{"Server": {"nginx/1.18.0"}})
+	findings := scanner.BannerDisclosureChecker{}.Check(http.Header{"Server": {"nginx/1.18.0"}}, testURL)
 	if len(findings) != 1 {
 		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
 	}
@@ -647,7 +683,7 @@ func TestBannerDisclosureFlagsServerHeader(t *testing.T) {
 }
 
 func TestBannerDisclosureFlagsXPoweredByHeader(t *testing.T) {
-	findings := scanner.BannerDisclosureChecker{}.Check(http.Header{"X-Powered-By": {"PHP/8.2.0"}})
+	findings := scanner.BannerDisclosureChecker{}.Check(http.Header{"X-Powered-By": {"PHP/8.2.0"}}, testURL)
 	if len(findings) != 1 {
 		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
 	}
@@ -666,7 +702,7 @@ func TestBannerDisclosureFlagsBothHeaders(t *testing.T) {
 	findings := scanner.BannerDisclosureChecker{}.Check(http.Header{
 		"Server":       {"nginx/1.18.0"},
 		"X-Powered-By": {"PHP/8.2.0"},
-	})
+	}, testURL)
 	if len(findings) != 2 {
 		t.Fatalf("Check() returned %d findings, want 2: %+v", len(findings), findings)
 	}
@@ -676,7 +712,7 @@ func TestBannerDisclosureIgnoresBlankHeaderValue(t *testing.T) {
 	findings := scanner.BannerDisclosureChecker{}.Check(http.Header{
 		"Server":       {""},
 		"X-Powered-By": {""},
-	})
+	}, testURL)
 	if len(findings) != 0 {
 		t.Errorf("Check() with blank header values returned %d findings, want 0: %+v", len(findings), findings)
 	}
@@ -688,7 +724,7 @@ func TestBannerDisclosureFlagsValueBehindBlankDuplicateOccurrence(t *testing.T) 
 	// occurrence and miss the disclosing one behind it.
 	findings := scanner.BannerDisclosureChecker{}.Check(http.Header{
 		"Server": {"", "nginx/1.18.0"},
-	})
+	}, testURL)
 	if len(findings) != 1 {
 		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
 	}
@@ -701,7 +737,7 @@ func TestBannerDisclosureFlagsValueBehindBlankDuplicateOccurrence(t *testing.T) 
 }
 
 func TestCORSNoAccessControlHeadersProducesNoFindings(t *testing.T) {
-	findings := scanner.CORSChecker{}.Check(http.Header{})
+	findings := scanner.CORSChecker{}.Check(http.Header{}, testURL)
 	if len(findings) != 0 {
 		t.Errorf("Check() on headers with no Access-Control-Allow-Origin returned %d findings, want 0: %+v", len(findings), findings)
 	}
@@ -711,7 +747,7 @@ func TestCORSFlagsReflectedOriginWithCredentials(t *testing.T) {
 	findings := scanner.CORSChecker{}.Check(http.Header{
 		"Access-Control-Allow-Origin":      {scanner.CORSProbeOrigin},
 		"Access-Control-Allow-Credentials": {"true"},
-	})
+	}, testURL)
 	if len(findings) != 1 {
 		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
 	}
@@ -741,7 +777,7 @@ func TestCORSFlagsWildcardOriginWithCredentials(t *testing.T) {
 	findings := scanner.CORSChecker{}.Check(http.Header{
 		"Access-Control-Allow-Origin":      {"*"},
 		"Access-Control-Allow-Credentials": {"true"},
-	})
+	}, testURL)
 	if len(findings) != 1 {
 		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
 	}
@@ -758,7 +794,7 @@ func TestCORSBareWildcardWithoutCredentialsProducesNoFindings(t *testing.T) {
 	// per the issue's acceptance criteria.
 	findings := scanner.CORSChecker{}.Check(http.Header{
 		"Access-Control-Allow-Origin": {"*"},
-	})
+	}, testURL)
 	if len(findings) != 0 {
 		t.Errorf("Check() on bare wildcard with no credentials returned %d findings, want 0: %+v", len(findings), findings)
 	}
@@ -767,7 +803,7 @@ func TestCORSBareWildcardWithoutCredentialsProducesNoFindings(t *testing.T) {
 func TestCORSReflectedOriginWithoutCredentialsProducesNoFindings(t *testing.T) {
 	findings := scanner.CORSChecker{}.Check(http.Header{
 		"Access-Control-Allow-Origin": {scanner.CORSProbeOrigin},
-	})
+	}, testURL)
 	if len(findings) != 0 {
 		t.Errorf("Check() on reflected origin with no credentials returned %d findings, want 0: %+v", len(findings), findings)
 	}
@@ -779,7 +815,7 @@ func TestCORSSpecificAllowedOriginWithCredentialsProducesNoFindings(t *testing.T
 	findings := scanner.CORSChecker{}.Check(http.Header{
 		"Access-Control-Allow-Origin":      {"https://trusted.example.com"},
 		"Access-Control-Allow-Credentials": {"true"},
-	})
+	}, testURL)
 	if len(findings) != 0 {
 		t.Errorf("Check() on specific allow-listed origin returned %d findings, want 0: %+v", len(findings), findings)
 	}
@@ -789,7 +825,7 @@ func TestCORSCredentialsFalseProducesNoFindings(t *testing.T) {
 	findings := scanner.CORSChecker{}.Check(http.Header{
 		"Access-Control-Allow-Origin":      {scanner.CORSProbeOrigin},
 		"Access-Control-Allow-Credentials": {"false"},
-	})
+	}, testURL)
 	if len(findings) != 0 {
 		t.Errorf("Check() with Access-Control-Allow-Credentials: false returned %d findings, want 0: %+v", len(findings), findings)
 	}
@@ -801,7 +837,7 @@ func TestCORSIgnoresBlankDuplicateOccurrence(t *testing.T) {
 	findings := scanner.CORSChecker{}.Check(http.Header{
 		"Access-Control-Allow-Origin":      {"", scanner.CORSProbeOrigin},
 		"Access-Control-Allow-Credentials": {"", "true"},
-	})
+	}, testURL)
 	if len(findings) != 1 {
 		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
 	}
@@ -815,7 +851,7 @@ func TestCORSDifferentCasedCredentialsValueProducesNoFindings(t *testing.T) {
 	findings := scanner.CORSChecker{}.Check(http.Header{
 		"Access-Control-Allow-Origin":      {scanner.CORSProbeOrigin},
 		"Access-Control-Allow-Credentials": {"True"},
-	})
+	}, testURL)
 	if len(findings) != 0 {
 		t.Errorf("Check() with Access-Control-Allow-Credentials: True returned %d findings, want 0: %+v", len(findings), findings)
 	}
@@ -829,7 +865,7 @@ func TestCORSDifferentCasedReflectedOriginProducesNoFindings(t *testing.T) {
 	findings := scanner.CORSChecker{}.Check(http.Header{
 		"Access-Control-Allow-Origin":      {strings.ToUpper(scanner.CORSProbeOrigin)},
 		"Access-Control-Allow-Credentials": {"true"},
-	})
+	}, testURL)
 	if len(findings) != 0 {
 		t.Errorf("Check() on a different-cased reflected origin returned %d findings, want 0: %+v", len(findings), findings)
 	}
