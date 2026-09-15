@@ -26,9 +26,10 @@ var allSecurityHeaders = map[string]string{
 
 // scanOne drives an httptest.NewServer (plain HTTP) target through Scan with
 // DefaultCheckers. That's 9 findings, not the full 10 DefaultCheckers can
-// produce: HSTSChecker is not Applicable to a plain-HTTP response (see
-// CONTEXT.md's Applicable entry) and contributes no Finding at all here,
-// regardless of the Strict-Transport-Security value the handler sends.
+// produce: HSTSChecker is not Applicable to a plain-HTTP response (the
+// Applicable glossary entry, CONTEXT.md, PR #92) and contributes no Finding
+// at all here, regardless of the Strict-Transport-Security value the handler
+// sends.
 func scanOne(t *testing.T, handler http.Handler) []scanner.Finding {
 	t.Helper()
 	srv := httptest.NewServer(handler)
@@ -84,8 +85,8 @@ func TestScanFallsBackToGETWhenHEADRejected(t *testing.T) {
 
 // TestScanHSTSAppliesOnlyToTheFinalResponseScheme drives HSTSChecker through
 // Scan across every scheme/redirect combination the Applicable glossary
-// entry (CONTEXT.md) covers: applicability is judged on the scheme of the
-// final response after redirects, not the URL the caller typed.
+// entry (CONTEXT.md, PR #92) covers: applicability is judged on the scheme
+// of the final response after redirects, not the URL the caller typed.
 func TestScanHSTSAppliesOnlyToTheFinalResponseScheme(t *testing.T) {
 	t.Run("direct HTTP with no HSTS produces no finding", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))

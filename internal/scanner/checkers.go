@@ -62,9 +62,12 @@ type HSTSChecker struct{}
 // HTTP: browsers ignore Strict-Transport-Security outside HTTPS (RFC 6797
 // §8.1), so neither StatusPass nor StatusMissing would be true — the header
 // simply cannot matter for this response, which is the "Applicable" glossary
-// concept (see CONTEXT.md).
+// concept (CONTEXT.md, PR #92).
 func (HSTSChecker) Check(headers http.Header, respURL *url.URL) []Finding {
-	if !strings.EqualFold(respURL.Scheme, "https") {
+	// url.Parse already lowercases Scheme, and respURL is always sourced from
+	// the standard library's own parsing (see doRequest in scan.go), so a
+	// plain != is enough here — no case-insensitive comparison needed.
+	if respURL.Scheme != "https" {
 		return nil
 	}
 	return checkValue(

@@ -137,10 +137,11 @@ func TestHSTSFlagsWeakAmongDuplicateHeaders(t *testing.T) {
 	}
 }
 
-// TestHSTSNotApplicableOverHTTP pins the Applicable glossary concept (see
-// CONTEXT.md): a response that arrived over plain HTTP gets no HSTS Finding
-// at all, for a present, weak, or missing header alike, since browsers
-// ignore Strict-Transport-Security outside HTTPS regardless of its value.
+// TestHSTSNotApplicableOverHTTP pins the Applicable glossary concept
+// (CONTEXT.md, PR #92): a response that arrived over plain HTTP gets no HSTS
+// Finding at all, for a present, weak, or missing header alike, since
+// browsers ignore Strict-Transport-Security outside HTTPS regardless of its
+// value.
 func TestHSTSNotApplicableOverHTTP(t *testing.T) {
 	httpURL, err := url.Parse("http://example.com")
 	if err != nil {
