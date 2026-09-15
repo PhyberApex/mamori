@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.2.0](https://github.com/PhyberApex/mamori/compare/v1.1.0...v1.2.0) (2026-09-15)
+
+
+### Features
+
+* **config:** add pre-scan/post-scan shell command hooks ([#88](https://github.com/PhyberApex/mamori/issues/88)) ([8017dcd](https://github.com/PhyberApex/mamori/commit/8017dcd56c1c3c16f57ecfcde5094ca800612f17))
+* **scanner:** add opt-in sensitive-path exposure checker ([#87](https://github.com/PhyberApex/mamori/issues/87)) ([1897919](https://github.com/PhyberApex/mamori/commit/18979198e973e4497a449d3612331fd560218735))
+* **scanner:** add suppressions config to mark accepted-risk Findings ([#84](https://github.com/PhyberApex/mamori/issues/84)) ([f27e67c](https://github.com/PhyberApex/mamori/commit/f27e67cd89d2ad56fd44f7fc36d595103ce00632)), closes [#59](https://github.com/PhyberApex/mamori/issues/59)
+* **scanner:** HSTSChecker emits no Finding for plain-HTTP responses ([#95](https://github.com/PhyberApex/mamori/issues/95)) ([979fba6](https://github.com/PhyberApex/mamori/commit/979fba6657b3740511df98eb551f9f75e78fc786))
+
+
+### Bug Fixes
+
+* **deps:** update module golang.org/x/net to v0.59.0 ([#90](https://github.com/PhyberApex/mamori/issues/90)) ([986673c](https://github.com/PhyberApex/mamori/commit/986673c0516bc70a917f68617de2333ac7fc212c))
+
 ## [1.1.0](https://github.com/PhyberApex/mamori/compare/v1.0.0...v1.1.0) (2026-08-26)
 
 
