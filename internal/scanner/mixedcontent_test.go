@@ -1,12 +1,13 @@
 package scanner_test
 
 import (
+	"net/url"
 	"testing"
 
 	"github.com/PhyberApex/mamori/internal/scanner"
 )
 
-const mixedContentTargetURL = "https://example.com/"
+var mixedContentTargetURL, _ = url.Parse("https://example.com/")
 
 func TestMixedContentCheckerFlagsInsecureReferences(t *testing.T) {
 	tests := []struct {
@@ -72,16 +73,13 @@ func TestMixedContentCheckerIgnoresSafeCases(t *testing.T) {
 }
 
 func TestMixedContentCheckerSkipsNonHTTPSTarget(t *testing.T) {
-	findings := scanner.MixedContentChecker{}.CheckBody([]byte(`<img src="http://insecure.example.net/logo.png">`), "http://example.com/")
+	httpTargetURL, err := url.Parse("http://example.com/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	findings := scanner.MixedContentChecker{}.CheckBody([]byte(`<img src="http://insecure.example.net/logo.png">`), httpTargetURL)
 	if findings != nil {
 		t.Fatalf("CheckBody() on an http:// target = %+v, want nil (mixed content only applies to https:// pages)", findings)
-	}
-}
-
-func TestMixedContentCheckerHandlesUnparseableTargetURL(t *testing.T) {
-	findings := scanner.MixedContentChecker{}.CheckBody([]byte(`<img src="http://insecure.example.net/logo.png">`), "://not-a-url")
-	if findings != nil {
-		t.Fatalf("CheckBody() with an unparseable target URL = %+v, want nil", findings)
 	}
 }
 

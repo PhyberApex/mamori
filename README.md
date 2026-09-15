@@ -5,7 +5,10 @@ A concurrent API security scanner built in Go
 `mamori` scans one or more HTTP(S) endpoints for missing or misconfigured
 security headers (HSTS, CSP, `X-Frame-Options`, `X-Content-Type-Options`,
 `Referrer-Policy`, `Cross-Origin-Resource-Policy`) and reports the findings,
-with each missing header linked to guidance on how to fix it.
+with each missing header linked to guidance on how to fix it. HSTS is judged
+only on responses received over HTTPS (after following any redirects); a
+plain-HTTP response produces no finding for it, since browsers ignore the
+header on that transport.
 
 ## Install
 

@@ -3,12 +3,20 @@ package scanner
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 )
 
+// Checker judges the headers of one response. respURL is the final URL that
+// response actually came from (after any redirects were followed), available
+// to Scan via the standard library's resp.Request.URL — the http.Response's
+// own Request field is updated to the last request sent, not the first one.
+// Most Checkers judge every response the same way regardless of scheme and
+// ignore respURL entirely; HSTSChecker is the only one that reads it, since
+// HSTS can only ever apply to a response that arrived over HTTPS.
 type Checker interface {
-	Check(headers http.Header) []Finding
+	Check(headers http.Header, respURL *url.URL) []Finding
 }
 
 func DefaultCheckers() []Checker {
@@ -40,17 +48,28 @@ type OriginProber interface {
 	ProbesOrigin()
 }
 
-func RunAll(checkers []Checker, headers http.Header) []Finding {
+func RunAll(checkers []Checker, headers http.Header, respURL *url.URL) []Finding {
 	var findings []Finding
 	for _, c := range checkers {
-		findings = append(findings, c.Check(headers)...)
+		findings = append(findings, c.Check(headers, respURL)...)
 	}
 	return findings
 }
 
 type HSTSChecker struct{}
 
-func (HSTSChecker) Check(headers http.Header) []Finding {
+// Check returns no Finding at all for a response that arrived over plain
+// HTTP: browsers ignore Strict-Transport-Security outside HTTPS (RFC 6797
+// §8.1), so neither StatusPass nor StatusMissing would be true — the header
+// simply cannot matter for this response, which is the "Applicable" glossary
+// concept (CONTEXT.md, PR #92).
+func (HSTSChecker) Check(headers http.Header, respURL *url.URL) []Finding {
+	// url.Parse already lowercases Scheme, and respURL is always sourced from
+	// the standard library's own parsing (see doRequest in scan.go), so a
+	// plain != is enough here — no case-insensitive comparison needed.
+	if respURL.Scheme != "https" {
+		return nil
+	}
 	return checkValue(
 		headers,
 		"Strict-Transport-Security",
@@ -84,7 +103,7 @@ func hstsWeakness(value string) (weak bool, message string) {
 
 type ContentTypeOptionsChecker struct{}
 
-func (ContentTypeOptionsChecker) Check(headers http.Header) []Finding {
+func (ContentTypeOptionsChecker) Check(headers http.Header, _ *url.URL) []Finding {
 	return checkValue(
 		headers,
 		"X-Content-Type-Options",
@@ -106,7 +125,7 @@ func contentTypeOptionsWeakness(value string) (weak bool, message string) {
 
 type FrameOptionsChecker struct{}
 
-func (FrameOptionsChecker) Check(headers http.Header) []Finding {
+func (FrameOptionsChecker) Check(headers http.Header, _ *url.URL) []Finding {
 	return checkValue(
 		headers,
 		"X-Frame-Options",
@@ -130,7 +149,7 @@ func frameOptionsWeakness(value string) (weak bool, message string) {
 
 type CSPChecker struct{}
 
-func (CSPChecker) Check(headers http.Header) []Finding {
+func (CSPChecker) Check(headers http.Header, _ *url.URL) []Finding {
 	return checkValue(
 		headers,
 		"Content-Security-Policy",
@@ -181,7 +200,7 @@ func cspWeakness(value string) (weak bool, message string) {
 
 type ReferrerPolicyChecker struct{}
 
-func (ReferrerPolicyChecker) Check(headers http.Header) []Finding {
+func (ReferrerPolicyChecker) Check(headers http.Header, _ *url.URL) []Finding {
 	return checkValue(
 		headers,
 		"Referrer-Policy",
@@ -235,7 +254,7 @@ func effectiveReferrerPolicy(value string) string {
 
 type COOPChecker struct{}
 
-func (COOPChecker) Check(headers http.Header) []Finding {
+func (COOPChecker) Check(headers http.Header, _ *url.URL) []Finding {
 	return checkValue(
 		headers,
 		"Cross-Origin-Opener-Policy",
@@ -262,7 +281,7 @@ func coopWeakness(value string) (weak bool, message string) {
 
 type COEPChecker struct{}
 
-func (COEPChecker) Check(headers http.Header) []Finding {
+func (COEPChecker) Check(headers http.Header, _ *url.URL) []Finding {
 	return checkValue(
 		headers,
 		"Cross-Origin-Embedder-Policy",
@@ -293,7 +312,7 @@ func coepWeakness(value string) (weak bool, message string) {
 
 type CORPChecker struct{}
 
-func (CORPChecker) Check(headers http.Header) []Finding {
+func (CORPChecker) Check(headers http.Header, _ *url.URL) []Finding {
 	return checkValue(
 		headers,
 		"Cross-Origin-Resource-Policy",
@@ -331,7 +350,7 @@ const xssProtectionReference = "https://developer.mozilla.org/en-US/docs/Web/HTT
 // rather than trusting browser defaults).
 type XSSProtectionChecker struct{}
 
-func (XSSProtectionChecker) Check(headers http.Header) []Finding {
+func (XSSProtectionChecker) Check(headers http.Header, _ *url.URL) []Finding {
 	return checkValue(
 		headers,
 		"X-XSS-Protection",
@@ -398,7 +417,7 @@ const cookieReference = "https://cheatsheetseries.owasp.org/cheatsheets/Session_
 // a present-but-weak cookie is.
 type CookieChecker struct{}
 
-func (CookieChecker) Check(headers http.Header) []Finding {
+func (CookieChecker) Check(headers http.Header, _ *url.URL) []Finding {
 	var findings []Finding
 	for _, line := range headers.Values("Set-Cookie") {
 		cookie, err := http.ParseSetCookie(line)
@@ -451,7 +470,7 @@ func cookieFindings(cookie *http.Cookie) []Finding {
 
 type PermissionsPolicyChecker struct{}
 
-func (PermissionsPolicyChecker) Check(headers http.Header) []Finding {
+func (PermissionsPolicyChecker) Check(headers http.Header, _ *url.URL) []Finding {
 	return checkPresence(
 		headers,
 		"Permissions-Policy",
@@ -469,7 +488,7 @@ const bannerDisclosureReference = "https://cheatsheetseries.owasp.org/cheatsheet
 // treats a response with no cookies as having nothing to protect.
 type BannerDisclosureChecker struct{}
 
-func (BannerDisclosureChecker) Check(headers http.Header) []Finding {
+func (BannerDisclosureChecker) Check(headers http.Header, _ *url.URL) []Finding {
 	var findings []Finding
 	for _, name := range bannerHeaderNames {
 		// A misconfigured proxy or CDN can append a blank duplicate of the
@@ -521,7 +540,7 @@ const corsReference = "https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Secu
 // and isn't a finding on its own.
 type CORSChecker struct{}
 
-func (CORSChecker) Check(headers http.Header) []Finding {
+func (CORSChecker) Check(headers http.Header, _ *url.URL) []Finding {
 	// Both comparisons below are byte-exact, not case-insensitive: per the
 	// Fetch spec's CORS check, a browser only honors a reflected origin that
 	// matches the serialized request origin exactly, and only honors
