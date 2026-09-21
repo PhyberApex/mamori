@@ -9,7 +9,7 @@ A single security-header rule that inspects a response's headers and produces ze
 _Avoid_: Rule, Validator, Inspector.
 
 **Finding**:
-The result of running one Checker against one target — a Status, a Severity, a reference link, and (when the Status is `weak`, `exposed`, or `insecure`) a message explaining what's wrong. Its `header` field names the specific thing being reported on: a header name for a Checker/BodyChecker Finding, or the probed path (e.g. `.git/config`) for a PathChecker Finding — reused rather than adding a path-specific field, so every reporter renders both kinds through the same field.
+The result of running one Checker against one target — a Status, a Severity, a reference link, and (when the Status is `weak`, `exposed`, or `insecure`) a message explaining what's wrong. Its `header` field names the specific thing being reported on: a header name for a Checker/BodyChecker Finding, the probed path (e.g. `.git/config`) for a PathChecker Finding, or the literal string `"Transport"` for TransportChecker's Finding, which isn't a real response header — reused rather than adding a path/transport-specific field, so every reporter renders all three kinds through the same field.
 _Avoid_: Result, Issue, Violation.
 
 **Status**:

@@ -29,6 +29,19 @@ func strongHeaders() map[string]string {
 	}
 }
 
+// writeTransportSuppressionConfig writes a config file suppressing the
+// Transport header, the documented opt-out for a deliberately plain-HTTP
+// target, and returns its path.
+func writeTransportSuppressionConfig(t *testing.T) string {
+	t.Helper()
+	configPath := filepath.Join(t.TempDir(), "mamori.yaml")
+	config := "suppressions:\n  - header: Transport\n"
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatalf("writing config file: %v", err)
+	}
+	return configPath
+}
+
 func headerServer(t *testing.T, headers map[string]string) string {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -75,11 +88,7 @@ func TestRunFailOnHighIgnoresMediumWeakFinding(t *testing.T) {
 	// insecure Finding would otherwise trip -fail-on high regardless of the
 	// medium-severity finding this test means to isolate; suppressing it is
 	// the documented opt-out for a deliberately plain-HTTP target.
-	configPath := filepath.Join(t.TempDir(), "mamori.yaml")
-	config := "suppressions:\n  - header: Transport\n"
-	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
-		t.Fatalf("writing config file: %v", err)
-	}
+	configPath := writeTransportSuppressionConfig(t)
 
 	if err := run([]string{"-config", configPath, "-fail-on", "high", url}, nil, io.Discard); err != nil {
 		t.Errorf("run() with -fail-on high returned %v, want nil for a medium-severity weak finding", err)
@@ -305,11 +314,7 @@ func TestRunFailOnGatesOnUnsuppressedTransportInsecureFinding(t *testing.T) {
 func TestRunTransportSuppressionPreventsFailOn(t *testing.T) {
 	url := headerServer(t, strongHeaders()) // plain HTTP: Transport is insecure regardless of headers
 
-	configPath := filepath.Join(t.TempDir(), "mamori.yaml")
-	config := "suppressions:\n  - header: Transport\n"
-	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
-		t.Fatalf("writing config file: %v", err)
-	}
+	configPath := writeTransportSuppressionConfig(t)
 
 	err := run([]string{"-config", configPath, "-fail-on", "high", url}, nil, io.Discard)
 	if err != nil {
