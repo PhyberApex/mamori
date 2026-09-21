@@ -122,6 +122,36 @@ func TestTerminalReporterShowsExposedFinding(t *testing.T) {
 	}
 }
 
+func TestTerminalReporterShowsInsecureMessage(t *testing.T) {
+	findings := []scanner.Finding{
+		{
+			URL:       "http://a.example",
+			Header:    "Transport",
+			Status:    scanner.StatusInsecure,
+			Severity:  scanner.SeverityHigh,
+			Message:   "the response was served over plain HTTP",
+			Reference: "https://owasp.example/transport",
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.TerminalReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+	out := buf.String()
+
+	for _, want := range []string{"INSECURE", "Transport", "the response was served over plain HTTP", "https://owasp.example/transport"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\noutput:\n%s", want, out)
+		}
+	}
+
+	//nolint:gosec // G101 false positive: ANSI color assertion, not credentials
+	if !strings.Contains(out, "\x1b[31mINSECURE\x1b[0m") {
+		t.Errorf("INSECURE tag for high-severity finding is not red\noutput:\n%q", out)
+	}
+}
+
 func TestTerminalReporterShowsErrorMessage(t *testing.T) {
 	findings := []scanner.Finding{
 		{
@@ -306,6 +336,40 @@ func TestJSONReporterEmitsOneFindingPerLine(t *testing.T) {
 	}
 	if third["message"] != "unsafe-url leaks the full URL, including query strings, to third parties on cross-origin requests" {
 		t.Errorf("weak finding message = %v, want the weakness explanation", third["message"])
+	}
+}
+
+func TestJSONReporterRendersInsecureFindingWithMessage(t *testing.T) {
+	findings := []scanner.Finding{
+		{
+			URL:       "http://a.example",
+			Header:    "Transport",
+			Status:    scanner.StatusInsecure,
+			Severity:  scanner.SeverityHigh,
+			Message:   "the response was served over plain HTTP",
+			Reference: "https://owasp.example/transport",
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.JSONReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	var f map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &f); err != nil {
+		t.Fatalf("output is not valid JSON: %v\noutput:\n%s", err, buf.String())
+	}
+	for key, want := range map[string]string{
+		"header":    "Transport",
+		"status":    "insecure",
+		"severity":  "high",
+		"message":   "the response was served over plain HTTP",
+		"reference": "https://owasp.example/transport",
+	} {
+		if got := f[key]; got != want {
+			t.Errorf("%q = %v, want %q", key, got, want)
+		}
 	}
 }
 

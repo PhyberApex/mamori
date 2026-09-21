@@ -21,6 +21,7 @@ type Checker interface {
 
 func DefaultCheckers() []Checker {
 	return []Checker{
+		TransportChecker{},
 		HSTSChecker{},
 		ContentTypeOptionsChecker{},
 		FrameOptionsChecker{},
@@ -54,6 +55,35 @@ func RunAll(checkers []Checker, headers http.Header, respURL *url.URL) []Finding
 		findings = append(findings, c.Check(headers, respURL)...)
 	}
 	return findings
+}
+
+const transportReference = "https://cheatsheetseries.owasp.org/cheatsheets/Transport_Layer_Security_Cheat_Sheet.html"
+
+// TransportChecker judges the transport itself, not a header: whether
+// respURL — the final URL the response actually came from, after any
+// redirects — is https or http. It's the only Checker that ignores headers
+// entirely, since there's no header that says which scheme a response
+// arrived over. A response that lands on http, whether the target was typed
+// that way or a redirect chain downgraded it from https, gets a Finding here
+// even though HSTSChecker stays silent on it (HSTS is not Applicable to a
+// plain-HTTP response); this Checker is what tells the reader the plain
+// report from a plain-HTTP target isn't a clean bill of health.
+type TransportChecker struct{}
+
+func (TransportChecker) Check(_ http.Header, respURL *url.URL) []Finding {
+	status := StatusPass
+	var message string
+	if respURL.Scheme != "https" {
+		status = StatusInsecure
+		message = "the response was served over plain HTTP: every header, cookie, and byte of the body is visible and tamperable to anyone on the network path"
+	}
+	return []Finding{{
+		Header:    "Transport",
+		Status:    status,
+		Severity:  SeverityHigh,
+		Reference: transportReference,
+		Message:   message,
+	}}
 }
 
 type HSTSChecker struct{}

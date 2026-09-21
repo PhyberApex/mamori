@@ -143,6 +143,18 @@ func TestFindingFails(t *testing.T) {
 			want:      false,
 		},
 		{
+			name:      "insecure at threshold fails",
+			finding:   scanner.Finding{Status: scanner.StatusInsecure, Severity: scanner.SeverityHigh},
+			threshold: scanner.SeverityHigh,
+			want:      true,
+		},
+		{
+			name:      "suppressed insecure finding never fails",
+			finding:   scanner.Finding{Status: scanner.StatusInsecure, Severity: scanner.SeverityHigh, Suppressed: true},
+			threshold: scanner.SeverityLow,
+			want:      false,
+		},
+		{
 			name:      "error always fails regardless of severity",
 			finding:   scanner.Finding{Status: scanner.StatusError, Severity: scanner.SeverityLow},
 			threshold: scanner.SeverityHigh,

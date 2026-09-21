@@ -29,6 +29,19 @@ func strongHeaders() map[string]string {
 	}
 }
 
+// writeTransportSuppressionConfig writes a config file suppressing the
+// Transport header, the documented opt-out for a deliberately plain-HTTP
+// target, and returns its path.
+func writeTransportSuppressionConfig(t *testing.T) string {
+	t.Helper()
+	configPath := filepath.Join(t.TempDir(), "mamori.yaml")
+	config := "suppressions:\n  - header: Transport\n"
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatalf("writing config file: %v", err)
+	}
+	return configPath
+}
+
 func headerServer(t *testing.T, headers map[string]string) string {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -71,7 +84,13 @@ func TestRunFailOnHighIgnoresMediumWeakFinding(t *testing.T) {
 	headers["X-Frame-Options"] = "ALLOW-FROM https://example.com"
 	url := headerServer(t, headers)
 
-	if err := run([]string{"-fail-on", "high", url}, nil, io.Discard); err != nil {
+	// headerServer is plain HTTP, so TransportChecker's own high-severity
+	// insecure Finding would otherwise trip -fail-on high regardless of the
+	// medium-severity finding this test means to isolate; suppressing it is
+	// the documented opt-out for a deliberately plain-HTTP target.
+	configPath := writeTransportSuppressionConfig(t)
+
+	if err := run([]string{"-config", configPath, "-fail-on", "high", url}, nil, io.Discard); err != nil {
 		t.Errorf("run() with -fail-on high returned %v, want nil for a medium-severity weak finding", err)
 	}
 }
@@ -207,8 +226,15 @@ func TestRunSuppressedFindingDoesNotTripFailOnButStaysInOutput(t *testing.T) {
 		if f["suppressed"] != true {
 			t.Errorf("finding %v suppressed = %v, want true", f, f["suppressed"])
 		}
-		if f["status"] != "missing" {
-			t.Errorf("finding %v status = %v, want unchanged %q", f, f["status"], "missing")
+		// Every header this server left unset reports missing except
+		// Transport, which always reports a Finding regardless of headers —
+		// insecure here, since the server is plain HTTP.
+		wantStatus := "missing"
+		if f["header"] == "Transport" {
+			wantStatus = "insecure"
+		}
+		if f["status"] != wantStatus {
+			t.Errorf("finding %v status = %v, want unchanged %q", f, f["status"], wantStatus)
 		}
 	}
 }
@@ -273,6 +299,26 @@ func TestRunFailOnGatesOnExposedFinding(t *testing.T) {
 	err := run([]string{"-check-exposed-paths", "-fail-on", "high", srv.URL}, nil, io.Discard)
 	if !errors.Is(err, errFailThreshold) {
 		t.Errorf("run() with an exposed .env and -fail-on high returned %v, want errFailThreshold", err)
+	}
+}
+
+func TestRunFailOnGatesOnUnsuppressedTransportInsecureFinding(t *testing.T) {
+	url := headerServer(t, strongHeaders()) // plain HTTP: Transport is insecure regardless of headers
+
+	err := run([]string{"-fail-on", "high", url}, nil, io.Discard)
+	if !errors.Is(err, errFailThreshold) {
+		t.Errorf("run() with a plain-HTTP target and -fail-on high returned %v, want errFailThreshold", err)
+	}
+}
+
+func TestRunTransportSuppressionPreventsFailOn(t *testing.T) {
+	url := headerServer(t, strongHeaders()) // plain HTTP: Transport is insecure regardless of headers
+
+	configPath := writeTransportSuppressionConfig(t)
+
+	err := run([]string{"-config", configPath, "-fail-on", "high", url}, nil, io.Discard)
+	if err != nil {
+		t.Errorf("run() with a suppressed Transport finding returned %v, want nil", err)
 	}
 }
 
