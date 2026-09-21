@@ -8,7 +8,10 @@ security headers (HSTS, CSP, `X-Frame-Options`, `X-Content-Type-Options`,
 with each missing header linked to guidance on how to fix it. HSTS is judged
 only on responses received over HTTPS (after following any redirects); a
 plain-HTTP response produces no finding for it, since browsers ignore the
-header on that transport.
+header on that transport. The transport itself is always judged separately:
+a response that lands on plain HTTP — whether the target was typed that way
+or a redirect chain downgraded it from HTTPS — gets a dedicated `high`
+severity `insecure` finding.
 
 ## Install
 
@@ -90,11 +93,19 @@ high→`error`.
 `-fail-on` gates the exit code on the scan's own findings, for use as a CI
 check. The default, `none`, never fails — the exit code stays `0` no matter
 what the scan finds. Set it to `low`, `medium`, or `high` to enable gating:
-a `missing` or `weak` finding fails once its severity reaches the configured
-threshold, and a finding that couldn't be scanned at all (`error`) always
-fails, regardless of threshold. When the gate trips, `mamori` exits `1`
-without an extra error line, since the report above has already shown which
-finding is responsible.
+a `missing`, `weak`, `exposed`, or `insecure` finding fails once its severity
+reaches the configured threshold, and a finding that couldn't be scanned at
+all (`error`) always fails, regardless of threshold. When the gate trips,
+`mamori` exits `1` without an extra error line, since the report above has
+already shown which finding is responsible.
+
+Because the transport itself is judged by default (see above), any
+`http://` target — or an `https://` target that redirects down to `http://`
+— now produces a `high` severity `insecure` finding, and so trips
+`-fail-on high` unless suppressed. A target that's deliberately served over
+plain HTTP (e.g. a local dev server) opts out with an ordinary Suppression,
+`{header: "Transport"}`, same as any other accepted-risk finding — see
+Config file below.
 
 `-H` attaches a header to every scan request, for endpoints that require
 auth (e.g. `-H 'Authorization: Bearer xyz' -H 'Cookie: session=abc'`). It

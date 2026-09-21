@@ -18,7 +18,13 @@ const (
 	// on the target URL itself — Exposed instead describes a path beyond the
 	// target URL that shouldn't be reachable at all.
 	StatusExposed Status = "exposed"
-	StatusError   Status = "error"
+	// StatusInsecure marks TransportChecker's Finding for a response that
+	// arrived over plain HTTP rather than HTTPS. Kept distinct from
+	// Missing/Weak/Exposed, none of which describe the transport itself —
+	// every other Status describes a header or path judged on top of
+	// whatever transport the response arrived over.
+	StatusInsecure Status = "insecure"
+	StatusError    Status = "error"
 )
 
 type Severity string
@@ -111,8 +117,8 @@ type Finding struct {
 // severity or Status, since that's the entire point of suppressing it.
 // Otherwise a StatusError always fails, regardless of threshold, since a
 // scan that couldn't complete shouldn't silently report success; a
-// Missing/Weak/Exposed finding fails once its severity reaches threshold; a
-// Pass never fails.
+// Missing/Weak/Exposed/Insecure finding fails once its severity reaches
+// threshold; a Pass never fails.
 func (f Finding) Fails(threshold Severity) bool {
 	if threshold == "" {
 		return false
@@ -123,7 +129,7 @@ func (f Finding) Fails(threshold Severity) bool {
 	if f.Status == StatusError {
 		return true
 	}
-	if f.Status != StatusMissing && f.Status != StatusWeak && f.Status != StatusExposed {
+	if f.Status != StatusMissing && f.Status != StatusWeak && f.Status != StatusExposed && f.Status != StatusInsecure {
 		return false
 	}
 	return f.Severity.AtLeast(threshold)

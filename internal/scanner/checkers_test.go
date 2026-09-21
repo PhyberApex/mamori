@@ -100,6 +100,56 @@ func TestHSTSWeakValues(t *testing.T) {
 	}
 }
 
+func TestTransportChecker(t *testing.T) {
+	httpsURL, err := url.Parse("https://example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpURL, err := url.Parse("http://example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("https response passes", func(t *testing.T) {
+		// A non-empty headers argument proves TransportChecker really ignores
+		// headers and judges respURL.Scheme alone.
+		findings := scanner.TransportChecker{}.Check(http.Header{"X-Whatever": {"anything"}}, httpsURL)
+		if len(findings) != 1 {
+			t.Fatalf("Check() returned %d findings, want 1", len(findings))
+		}
+		f := findings[0]
+		if f.Header != "Transport" {
+			t.Errorf("Header = %q, want %q", f.Header, "Transport")
+		}
+		if f.Status != scanner.StatusPass {
+			t.Errorf("Status = %q, want %q", f.Status, scanner.StatusPass)
+		}
+	})
+
+	t.Run("http response is insecure", func(t *testing.T) {
+		findings := scanner.TransportChecker{}.Check(http.Header{}, httpURL)
+		if len(findings) != 1 {
+			t.Fatalf("Check() returned %d findings, want 1", len(findings))
+		}
+		f := findings[0]
+		if f.Header != "Transport" {
+			t.Errorf("Header = %q, want %q", f.Header, "Transport")
+		}
+		if f.Status != scanner.StatusInsecure {
+			t.Errorf("Status = %q, want %q", f.Status, scanner.StatusInsecure)
+		}
+		if f.Severity != scanner.SeverityHigh {
+			t.Errorf("Severity = %q, want %q", f.Severity, scanner.SeverityHigh)
+		}
+		if f.Reference != "https://cheatsheetseries.owasp.org/cheatsheets/Transport_Layer_Security_Cheat_Sheet.html" {
+			t.Errorf("Reference = %q, want the OWASP TLS cheat sheet URL", f.Reference)
+		}
+		if f.Message == "" {
+			t.Error("Message is empty, want an explanation")
+		}
+	})
+}
+
 func TestHSTSAcceptsValidMaxAge(t *testing.T) {
 	tests := []string{
 		"max-age=63072000",

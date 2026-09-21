@@ -123,7 +123,9 @@ func (SarifReporter) Report(findings []Finding, w io.Writer) error {
 // a level of "error" since a failed scan is not merely a warning.
 // StatusExposed findings reuse Header for a probed path rather than a header
 // name (see Finding.Header), so they get their own wording rather than the
-// "%s header is %s" phrasing every other Status shares.
+// "%s header is %s" phrasing every other Status shares. StatusInsecure
+// findings reuse Header for "Transport" the same way — not a real response
+// header — so they get the same treatment.
 func sarifRuleAndResult(f Finding) (sarifRule, sarifResult) {
 	var ruleID, description, message, level string
 	switch f.Status {
@@ -136,6 +138,14 @@ func sarifRuleAndResult(f Finding) (sarifRule, sarifResult) {
 		ruleID = f.Header
 		description = fmt.Sprintf("Checks whether %s is exposed.", f.Header)
 		message = fmt.Sprintf("%s is exposed", f.Header)
+		if f.Message != "" {
+			message += ": " + f.Message
+		}
+		level = sarifLevel(f.Severity)
+	case StatusInsecure:
+		ruleID = f.Header
+		description = "Checks whether the response was served over a secure transport."
+		message = "the connection is insecure"
 		if f.Message != "" {
 			message += ": " + f.Message
 		}
