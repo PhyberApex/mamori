@@ -97,7 +97,12 @@ a `missing`, `weak`, `exposed`, or `insecure` finding fails once its severity
 reaches the configured threshold, and a finding that couldn't be scanned at
 all (`error`) always fails, regardless of threshold. When the gate trips,
 `mamori` exits `1` without an extra error line, since the report above has
-already shown which finding is responsible.
+already shown which finding is responsible — unless a Hook also failed (see
+Hooks below), in which case that takes priority and `mamori` exits `3`
+instead. Any other error (a bad flag, an unreadable or invalid config file,
+no resolvable targets, or a failure writing the report) exits `2`, with a
+"mamori: ..." stderr line describing the problem. A caller (e.g. CI) can
+tell these apart from the exit code alone, without parsing stderr.
 
 Because the transport itself is judged by default (see above), any
 `http://` target — or an `https://` target that redirects down to `http://`
@@ -136,14 +141,17 @@ routed to mamori's own stderr, never stdout, so a hook's output can't
 corrupt `-o json`/`-o sarif` output.
 
 If `-pre-scan-hook` fails or exceeds `-hook-timeout`, the scan aborts before
-any HTTP request is made and mamori exits non-zero. `-post-scan-hook` runs
-after the scan completes — regardless of the scan's own findings — as long
-as `-pre-scan-hook` succeeded or wasn't set, since its job (e.g. re-enabling
+any HTTP request is made and mamori exits `3`. `-post-scan-hook` runs after
+the scan completes — regardless of the scan's own findings — as long as
+`-pre-scan-hook` succeeded or wasn't set, since its job (e.g. re-enabling
 the WAF) needs to happen even when the scan itself failed. If
 `-post-scan-hook` fails or times out, the scan's findings are still
-reported normally, but mamori exits non-zero with an error distinct from a
-`-fail-on` failure. With no hooks configured, no subprocess is spawned and
-no hook timeout is enforced.
+reported normally, but mamori still exits `3`. This takes priority over
+`-fail-on`: if the post-scan Hook fails or times out *and* the scan's
+findings also trip `-fail-on`, mamori exits `3`, not `1` — the Hook failure
+is the more unusual, actionable problem, so it isn't silently replaced by
+the routine fail-on exit code. With no hooks configured, no subprocess is
+spawned and no hook timeout is enforced.
 
 ### Environment variables
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -350,6 +351,9 @@ func TestRunPreScanHookFailureAbortsBeforeAnyRequest(t *testing.T) {
 	if !strings.Contains(err.Error(), "pre-scan hook") {
 		t.Errorf("run() error = %q, want it to name the pre-scan hook", err.Error())
 	}
+	if !errors.Is(err, errHookFailed) {
+		t.Errorf("run() error = %v, want errHookFailed", err)
+	}
 	if requests != 0 {
 		t.Errorf("run() made %d requests to the target, want 0: a failing pre-scan hook must abort before any HTTP request", requests)
 	}
@@ -408,6 +412,9 @@ func TestRunPostScanHookFailureStillReportsFindingsButExitsNonZero(t *testing.T)
 	if errors.Is(err, errFailThreshold) {
 		t.Error("run() with a failing -post-scan-hook returned errFailThreshold, want a distinct hook error")
 	}
+	if !errors.Is(err, errHookFailed) {
+		t.Errorf("run() error = %v, want errHookFailed", err)
+	}
 	if !strings.Contains(err.Error(), "post-scan hook") {
 		t.Errorf("run() error = %q, want it to name the post-scan hook", err.Error())
 	}
@@ -430,6 +437,9 @@ func TestRunPostScanHookFailureTakesPriorityWhenFailOnAlsoTrips(t *testing.T) {
 	// rather than being silently replaced by the routine fail-on error.
 	if !strings.Contains(err.Error(), "post-scan hook") {
 		t.Errorf("run() error = %q, want it to name the post-scan hook even though -fail-on also tripped", err.Error())
+	}
+	if !errors.Is(err, errHookFailed) {
+		t.Errorf("run() error = %v, want errHookFailed so main() exits 3, not 1, when both trip", err)
 	}
 	if buf.Len() == 0 {
 		t.Error("run() wrote no findings, want the scan's findings still reported")
@@ -522,6 +532,41 @@ func TestColorEnabledFalseWhenNoColorSetEvenForATerminal(t *testing.T) {
 
 	if colorEnabled(f) {
 		t.Error("colorEnabled() = true with NO_COLOR set, want false")
+	}
+}
+
+func TestExitCodeNilIsZero(t *testing.T) {
+	if got := exitCode(nil); got != 0 {
+		t.Errorf("exitCode(nil) = %d, want 0", got)
+	}
+}
+
+func TestExitCodeFailThresholdIsOne(t *testing.T) {
+	if got := exitCode(errFailThreshold); got != 1 {
+		t.Errorf("exitCode(errFailThreshold) = %d, want 1", got)
+	}
+}
+
+func TestExitCodeGenericErrorIsTwo(t *testing.T) {
+	if got := exitCode(errors.New("boom")); got != 2 {
+		t.Errorf("exitCode(generic error) = %d, want 2", got)
+	}
+}
+
+func TestExitCodeHookFailedIsThree(t *testing.T) {
+	if got := exitCode(errHookFailed); got != 3 {
+		t.Errorf("exitCode(errHookFailed) = %d, want 3", got)
+	}
+}
+
+func TestExitCodeHookFailedTakesPriorityOverFailThreshold(t *testing.T) {
+	// run() never actually returns an error wrapping both sentinels at once
+	// (hookErr short-circuits before the -fail-on check), but exitCode must
+	// still prefer the Hook bucket if it ever did, matching run()'s own
+	// priority.
+	err := fmt.Errorf("%w: %w", errHookFailed, errFailThreshold)
+	if got := exitCode(err); got != 3 {
+		t.Errorf("exitCode() = %d, want 3 when both errHookFailed and errFailThreshold are present", got)
 	}
 }
 

@@ -26,16 +26,34 @@ var errFailThreshold = errors.New("findings at or above the -fail-on threshold")
 var version = "dev"
 
 func main() {
-	if err := run(os.Args[1:], stdinIfPiped(), os.Stdout); err != nil {
-		// -h/-help surfaces as flag.ErrHelp after the FlagSet has already
-		// printed usage; that is a clean exit, not a failure.
-		if errors.Is(err, flag.ErrHelp) {
-			return
-		}
-		if !errors.Is(err, errFailThreshold) {
-			fmt.Fprintln(os.Stderr, "mamori:", err)
-		}
-		os.Exit(1)
+	err := run(os.Args[1:], stdinIfPiped(), os.Stdout)
+	// -h/-help surfaces as flag.ErrHelp after the FlagSet has already
+	// printed usage; that is a clean exit, not a failure.
+	if errors.Is(err, flag.ErrHelp) {
+		return
+	}
+	if err != nil && !errors.Is(err, errFailThreshold) {
+		fmt.Fprintln(os.Stderr, "mamori:", err)
+	}
+	os.Exit(exitCode(err))
+}
+
+// exitCode maps a run() error to the process exit code a CI caller relies
+// on to tell apart why mamori exited non-zero, without parsing stderr: a
+// Hook failure (3) takes priority over a tripped -fail-on gate (1), which in
+// turn takes priority over any other error (2) — matching the priority
+// run() already gives a Hook failure over -fail-on when choosing which
+// error to return.
+func exitCode(err error) int {
+	switch {
+	case err == nil:
+		return 0
+	case errors.Is(err, errHookFailed):
+		return 3
+	case errors.Is(err, errFailThreshold):
+		return 1
+	default:
+		return 2
 	}
 }
 

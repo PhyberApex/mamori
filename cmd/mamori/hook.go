@@ -20,6 +20,12 @@ const (
 	hookPhasePost hookPhase = "post"
 )
 
+// errHookFailed signals that -pre-scan-hook or -post-scan-hook failed or
+// timed out, as opposed to some other runtime error. main() checks for it
+// specifically so it can route to its own exit code, taking priority over
+// -fail-on even when both trip on the same run.
+var errHookFailed = errors.New("hook failed")
+
 // runHook runs command as a shell command once, if command is non-empty. It
 // is a no-op (ran=false, err=nil) when command is empty, so callers can tell
 // "no hook configured" apart from "hook ran and failed". The subprocess
@@ -46,9 +52,9 @@ func runHook(ctx context.Context, command string, phase hookPhase, targets []str
 
 	if err := cmd.Run(); err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return true, fmt.Errorf("%s-scan hook timed out after %v", phase, timeout)
+			return true, fmt.Errorf("%w: %s-scan hook timed out after %v", errHookFailed, phase, timeout)
 		}
-		return true, fmt.Errorf("%s-scan hook: %w", phase, err)
+		return true, fmt.Errorf("%w: %s-scan hook: %w", errHookFailed, phase, err)
 	}
 	return true, nil
 }
