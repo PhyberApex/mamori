@@ -104,7 +104,11 @@ func (t TerminalReporter) Report(findings []Finding, w io.Writer) error {
 				}
 			}
 			if f.Suppressed {
-				line += " " + colorize(t.Color, ansiDim, "[SUPPRESSED]")
+				tag := "[SUPPRESSED]"
+				if f.SuppressedReason != "" {
+					tag += " (" + f.SuppressedReason + ")"
+				}
+				line += " " + colorize(t.Color, ansiDim, tag)
 			}
 			if _, err := fmt.Fprintf(w, "%s\n", line); err != nil {
 				return err

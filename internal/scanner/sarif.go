@@ -53,6 +53,10 @@ type sarifResult struct {
 // from Results entirely.
 type sarifSuppression struct {
 	Kind sarifSuppressionKind `json:"kind"`
+	// Justification carries the matching Suppression's optional reason
+	// (§3.28.14), omitted when unset the same way Finding.SuppressedReason
+	// is omitted from JSON output.
+	Justification string `json:"justification,omitempty"`
 }
 
 // sarifSuppressionKind is SARIF's closed set of suppression kinds, the same
@@ -170,7 +174,7 @@ func sarifRuleAndResult(f Finding) (sarifRule, sarifResult) {
 		},
 	}
 	if f.Suppressed {
-		result.Suppressions = []sarifSuppression{{Kind: sarifSuppressionExternal}}
+		result.Suppressions = []sarifSuppression{{Kind: sarifSuppressionExternal, Justification: f.SuppressedReason}}
 	}
 	return rule, result
 }
