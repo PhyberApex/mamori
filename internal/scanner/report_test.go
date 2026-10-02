@@ -75,7 +75,7 @@ func TestTerminalReporterShowsWeakMessage(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := (scanner.TerminalReporter{}).Report(findings, &buf); err != nil {
+	if err := (scanner.TerminalReporter{Color: true}).Report(findings, &buf); err != nil {
 		t.Fatalf("Report() returned error: %v", err)
 	}
 	out := buf.String()
@@ -105,7 +105,7 @@ func TestTerminalReporterShowsExposedFinding(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := (scanner.TerminalReporter{}).Report(findings, &buf); err != nil {
+	if err := (scanner.TerminalReporter{Color: true}).Report(findings, &buf); err != nil {
 		t.Fatalf("Report() returned error: %v", err)
 	}
 	out := buf.String()
@@ -135,7 +135,7 @@ func TestTerminalReporterShowsInsecureMessage(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := (scanner.TerminalReporter{}).Report(findings, &buf); err != nil {
+	if err := (scanner.TerminalReporter{Color: true}).Report(findings, &buf); err != nil {
 		t.Fatalf("Report() returned error: %v", err)
 	}
 	out := buf.String()
@@ -202,7 +202,7 @@ func TestTerminalReporterColorsOutput(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := (scanner.TerminalReporter{}).Report(findings, &buf); err != nil {
+	if err := (scanner.TerminalReporter{Color: true}).Report(findings, &buf); err != nil {
 		t.Fatalf("Report() returned error: %v", err)
 	}
 	out := buf.String()
@@ -224,6 +224,89 @@ func TestTerminalReporterColorsOutput(t *testing.T) {
 	xfoIdx := strings.Index(out, "X-Frame-Options")
 	if yellowIdx == -1 || xfoIdx == -1 || xfoIdx < yellowIdx {
 		t.Errorf("yellow MISSING does not precede its medium-severity header\noutput:\n%q", out)
+	}
+}
+
+func TestTerminalReporterPlainTextOmitsAnsiEscapes(t *testing.T) {
+	findings := []scanner.Finding{
+		{
+			URL:      "https://a.example",
+			Header:   "Strict-Transport-Security",
+			Status:   scanner.StatusPass,
+			Severity: scanner.SeverityHigh,
+		},
+		{
+			URL:      "https://a.example",
+			Header:   "X-Frame-Options",
+			Status:   scanner.StatusMissing,
+			Severity: scanner.SeverityMedium,
+		},
+		{
+			URL:        "https://a.example",
+			Header:     "Content-Security-Policy",
+			Status:     scanner.StatusMissing,
+			Severity:   scanner.SeverityHigh,
+			Suppressed: true,
+		},
+		{
+			URL:       "https://a.example",
+			Header:    "Referrer-Policy",
+			Status:    scanner.StatusWeak,
+			Severity:  scanner.SeverityLow,
+			Message:   "unsafe-url leaks the full URL",
+			Reference: "https://owasp.example/referrer-policy",
+		},
+		{
+			URL:       "https://a.example",
+			Header:    ".git/config",
+			Status:    scanner.StatusExposed,
+			Severity:  scanner.SeverityHigh,
+			Message:   "responded 200: the path is directly readable",
+			Reference: "https://owasp.example/exposure",
+		},
+		{
+			URL:       "http://a.example",
+			Header:    "Transport",
+			Status:    scanner.StatusInsecure,
+			Severity:  scanner.SeverityHigh,
+			Message:   "the response was served over plain HTTP",
+			Reference: "https://owasp.example/transport",
+		},
+		{
+			URL:     "https://down.example",
+			Status:  scanner.StatusError,
+			Message: "context deadline exceeded",
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.TerminalReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+	out := buf.String()
+
+	if strings.Contains(out, "\x1b[") {
+		t.Errorf("plain-text report contains an ANSI escape sequence\noutput:\n%q", out)
+	}
+
+	for _, want := range []string{
+		"https://a.example",
+		"PASS",
+		"MISSING",
+		"X-Frame-Options",
+		"WEAK",
+		"Referrer-Policy",
+		"EXPOSED",
+		".git/config",
+		"INSECURE",
+		"Transport",
+		"ERROR",
+		"context deadline exceeded",
+		"[SUPPRESSED]",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("plain-text output missing %q\noutput:\n%s", want, out)
+		}
 	}
 }
 

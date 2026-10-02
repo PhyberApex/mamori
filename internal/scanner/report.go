@@ -35,38 +35,48 @@ const (
 	ansiDim    = "\x1b[2m"
 )
 
-func colorize(color, s string) string {
+func colorize(enabled bool, color, s string) string {
+	if !enabled {
+		return s
+	}
 	return color + s + ansiReset
 }
 
 // statusTag picks the color from severity for missing/weak/exposed/insecure
 // findings so a high-severity finding reads as urgent (red) while lower
 // severities stay a warning yellow.
-func statusTag(f Finding) string {
+func statusTag(f Finding, color bool) string {
 	switch f.Status {
 	case StatusPass:
-		return colorize(ansiGreen, "PASS")
+		return colorize(color, ansiGreen, "PASS")
 	case StatusError:
-		return colorize(ansiRed, "ERROR")
+		return colorize(color, ansiRed, "ERROR")
 	}
-	color := ansiYellow
+	c := ansiYellow
 	if f.Severity == SeverityHigh {
-		color = ansiRed
+		c = ansiRed
 	}
 	switch f.Status {
 	case StatusWeak:
-		return colorize(color, "WEAK")
+		return colorize(color, c, "WEAK")
 	case StatusExposed:
-		return colorize(color, "EXPOSED")
+		return colorize(color, c, "EXPOSED")
 	case StatusInsecure:
-		return colorize(color, "INSECURE")
+		return colorize(color, c, "INSECURE")
 	}
-	return colorize(color, "MISSING")
+	return colorize(color, c, "MISSING")
 }
 
-type TerminalReporter struct{}
+// TerminalReporter renders findings as human-readable text. Color is opt-in
+// rather than inferred from the writer, since the decision of whether the
+// destination is an interactive terminal (and whether NO_COLOR is set)
+// belongs to the CLI entry point, not this package — see stdinIfPiped in
+// cmd/mamori/main.go for the equivalent precedent on the input side.
+type TerminalReporter struct {
+	Color bool
+}
 
-func (TerminalReporter) Report(findings []Finding, w io.Writer) error {
+func (t TerminalReporter) Report(findings []Finding, w io.Writer) error {
 	var urls []string
 	byURL := map[string][]Finding{}
 	for _, f := range findings {
@@ -77,15 +87,15 @@ func (TerminalReporter) Report(findings []Finding, w io.Writer) error {
 	}
 
 	for _, url := range urls {
-		if _, err := fmt.Fprintf(w, "%s\n", colorize(ansiBold, url)); err != nil {
+		if _, err := fmt.Fprintf(w, "%s\n", colorize(t.Color, ansiBold, url)); err != nil {
 			return err
 		}
 		for _, f := range byURL[url] {
 			var line string
 			if f.Status == StatusError {
-				line = fmt.Sprintf("  [%s] %s", statusTag(f), f.Message)
+				line = fmt.Sprintf("  [%s] %s", statusTag(f, t.Color), f.Message)
 			} else {
-				line = fmt.Sprintf("  [%s] %s (%s)", statusTag(f), f.Header, f.Severity)
+				line = fmt.Sprintf("  [%s] %s (%s)", statusTag(f, t.Color), f.Header, f.Severity)
 				if (f.Status == StatusWeak || f.Status == StatusExposed || f.Status == StatusInsecure) && f.Message != "" {
 					line += ": " + f.Message
 				}
@@ -94,7 +104,7 @@ func (TerminalReporter) Report(findings []Finding, w io.Writer) error {
 				}
 			}
 			if f.Suppressed {
-				line += " " + colorize(ansiDim, "[SUPPRESSED]")
+				line += " " + colorize(t.Color, ansiDim, "[SUPPRESSED]")
 			}
 			if _, err := fmt.Fprintf(w, "%s\n", line); err != nil {
 				return err
