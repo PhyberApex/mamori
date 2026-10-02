@@ -49,6 +49,32 @@ func stdinIfPiped() io.Reader {
 	return os.Stdin
 }
 
+// colorEnabled reports whether TerminalReporter should style its output: only
+// when out is an interactive terminal and NO_COLOR is unset.
+func colorEnabled(out io.Writer) bool {
+	return !noColorSet() && isTerminal(out)
+}
+
+// noColorSet reports whether NO_COLOR is present in the environment. Per
+// https://no-color.org, presence alone disables color, so this checks
+// LookupEnv rather than treating the value as a flag to parse.
+func noColorSet() bool {
+	_, ok := os.LookupEnv("NO_COLOR")
+	return ok
+}
+
+// isTerminal reports whether w is an interactive terminal (a character
+// device), mirroring how stdinIfPiped detects ttyness via Stat() on the
+// other side of the pipe.
+func isTerminal(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := f.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
 func run(args []string, stdin io.Reader, out io.Writer) error {
 	cfg, targets, err := config.Resolve(args, os.Getenv)
 	if err != nil {
@@ -81,7 +107,7 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 	// short-circuiting here.
 	_, hookErr := runHook(ctx, cfg.PostScanHook, hookPhasePost, urls, cfg.HookTimeout, os.Stderr)
 
-	if err := reporterFor(cfg.Output).Report(findings, out); err != nil {
+	if err := reporterFor(cfg.Output, out).Report(findings, out); err != nil {
 		return err
 	}
 	// hookErr takes priority over -fail-on when both trip: the report above
@@ -102,13 +128,13 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 // reporterFor returns the Reporter interface, not a concrete type, so run
 // stays indifferent to which implementation it drives — the Go way of
 // selecting a strategy is a small interface plus a switch at the edge.
-func reporterFor(o config.Output) scanner.Reporter {
+func reporterFor(o config.Output, out io.Writer) scanner.Reporter {
 	switch o {
 	case config.OutputJSON:
 		return scanner.JSONReporter{}
 	case config.OutputSarif:
 		return scanner.SarifReporter{}
 	default:
-		return scanner.TerminalReporter{}
+		return scanner.TerminalReporter{Color: colorEnabled(out)}
 	}
 }

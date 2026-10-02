@@ -239,6 +239,19 @@ func TestRunSuppressedFindingDoesNotTripFailOnButStaysInOutput(t *testing.T) {
 	}
 }
 
+func TestRunTerminalOutputToNonTerminalWriterOmitsAnsiEscapes(t *testing.T) {
+	url := headerServer(t, nil) // every header missing, including high severity
+
+	var buf bytes.Buffer
+	if err := run([]string{url}, nil, &buf); err != nil {
+		t.Fatalf("run() returned error: %v", err)
+	}
+
+	if strings.Contains(buf.String(), "\x1b[") {
+		t.Errorf("run() wrote an ANSI escape sequence to a non-terminal writer\noutput:\n%q", buf.String())
+	}
+}
+
 func TestRunDefaultDoesNotProbeExposedPaths(t *testing.T) {
 	var probed bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -452,6 +465,63 @@ func TestRunHookTimeoutFlagBoundsPreScanHook(t *testing.T) {
 	err := run([]string{"-pre-scan-hook", "sleep 5", "-hook-timeout", "20ms", url}, nil, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Errorf("run() error = %v, want a timeout error", err)
+	}
+}
+
+func TestNoColorSetTrueWhenPresentRegardlessOfValue(t *testing.T) {
+	for _, value := range []string{"", "0", "1", "true", "false"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("NO_COLOR", value)
+			if !noColorSet() {
+				t.Errorf("noColorSet() = false with NO_COLOR=%q, want true", value)
+			}
+		})
+	}
+}
+
+func TestNoColorSetFalseWhenUnset(t *testing.T) {
+	if _, ok := os.LookupEnv("NO_COLOR"); ok {
+		t.Skip("NO_COLOR is set in the ambient test environment")
+	}
+	if noColorSet() {
+		t.Error("noColorSet() = true with NO_COLOR unset, want false")
+	}
+}
+
+func TestIsTerminalFalseForRegularFile(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "out")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	if isTerminal(f) {
+		t.Error("isTerminal() = true for a regular file, want false")
+	}
+}
+
+func TestIsTerminalFalseForNonFileWriter(t *testing.T) {
+	if isTerminal(&bytes.Buffer{}) {
+		t.Error("isTerminal() = true for a bytes.Buffer, want false")
+	}
+}
+
+func TestColorEnabledFalseWhenOutIsNotATerminal(t *testing.T) {
+	if colorEnabled(&bytes.Buffer{}) {
+		t.Error("colorEnabled() = true for a bytes.Buffer, want false: it is never an interactive terminal")
+	}
+}
+
+func TestColorEnabledFalseWhenNoColorSetEvenForATerminal(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "out")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	t.Setenv("NO_COLOR", "")
+
+	if colorEnabled(f) {
+		t.Error("colorEnabled() = true with NO_COLOR set, want false")
 	}
 }
 
