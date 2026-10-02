@@ -125,7 +125,7 @@ func ApplySuppressions(findings []Finding, suppressions []Suppression, now time.
 	}
 	for si, matched := range expiredMatched {
 		if matched {
-			fmt.Fprintf(stderr, "mamori: suppression expired, no longer suppressing matched findings: %s\n", suppressions[si].describe())
+			_, _ = fmt.Fprintf(stderr, "mamori: suppression expired, no longer suppressing matched findings: %s\n", suppressions[si].describe())
 		}
 	}
 }

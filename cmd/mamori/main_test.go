@@ -355,7 +355,7 @@ func TestRunExpiredSuppressionNoLongerPreventsFailOnAndWarnsOnStderr(t *testing.
 	os.Stderr = w
 	err := run([]string{"-config", configPath, "-fail-on", "high", url}, nil, io.Discard)
 	os.Stderr = origStderr
-	w.Close()
+	_ = w.Close()
 	captured, readErr := io.ReadAll(r)
 	if readErr != nil {
 		t.Fatalf("reading captured stderr: %v", readErr)
