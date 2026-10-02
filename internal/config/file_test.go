@@ -265,6 +265,53 @@ suppressions:
 	}
 }
 
+func TestResolveConfigFileLoadsSuppressionReasonAndExpires(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `
+suppressions:
+  - header: Content-Security-Policy
+    reason: accepted risk, tracked in JIRA-123
+    expires: 2099-12-31
+`)
+
+	cfg, _, err := config.Resolve([]string{"-config", path}, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if len(cfg.Suppressions) != 1 {
+		t.Fatalf("Suppressions = %+v, want 1 entry", cfg.Suppressions)
+	}
+	if cfg.Suppressions[0].Reason != "accepted risk, tracked in JIRA-123" {
+		t.Errorf("Suppressions[0].Reason = %q, want the configured reason", cfg.Suppressions[0].Reason)
+	}
+	if cfg.Suppressions[0].Expires != "2099-12-31" {
+		t.Errorf("Suppressions[0].Expires = %q, want %q", cfg.Suppressions[0].Expires, "2099-12-31")
+	}
+}
+
+func TestResolveConfigFileRejectsSuppressionWithInvalidExpires(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `
+suppressions:
+  - header: Content-Security-Policy
+    expires: not-a-date
+`)
+
+	if _, _, err := config.Resolve([]string{"-config", path}, noEnv); err == nil {
+		t.Error("Resolve() with a suppression entry whose expires isn't YYYY-MM-DD returned nil error, want error")
+	}
+}
+
+func TestResolveConfigFileRejectsSuppressionWithWrongDateLayout(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `
+suppressions:
+  - header: Content-Security-Policy
+    expires: "12/31/2099"
+`)
+
+	if _, _, err := config.Resolve([]string{"-config", path}, noEnv); err == nil {
+		t.Error("Resolve() with a suppression expires in MM/DD/YYYY form returned nil error, want error")
+	}
+}
+
 func TestResolveConfigFileLoadsCheckExposedPathsAndExposedPaths(t *testing.T) {
 	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `
 checkExposedPaths: true

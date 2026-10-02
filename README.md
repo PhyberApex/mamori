@@ -190,7 +190,9 @@ exposedPaths:
 suppressions:
   - header: Content-Security-Policy
     host: https://cdn.example.com
-  - host: https://legacy.example.com   # header omitted -> suppresses every header for this host
+  - host: https://legacy.example.com
+    reason: legacy app, migration tracked in JIRA-456
+    expires: 2026-12-31
 preScanHook: ./disable-waf.sh
 postScanHook: ./enable-waf.sh
 hookTimeout: 30s
@@ -215,6 +217,16 @@ name and the literal target string mamori scanned — no glob/wildcard
 support. A suppressed finding is excluded from `-fail-on` gating regardless
 of severity, but still appears in terminal, JSON, and SARIF output, marked
 as suppressed rather than omitted.
+
+An entry may also set an optional `reason` and an optional `expires`, both
+independent of each other and of `header`/`host`. `reason` is freeform text
+shown next to the suppressed marking in every output format (SARIF's
+`suppressions[].justification`), so a reader can see not just that a finding
+was suppressed but why. `expires` is a `YYYY-MM-DD` date, inclusive, in
+UTC: the entry still suppresses through the end of that day and stops
+matching once it has passed, at which point the finding gates under
+`-fail-on` again and mamori names the expired entry on stderr — so an
+accepted risk gets re-reviewed instead of being accepted forever.
 
 ## License
 

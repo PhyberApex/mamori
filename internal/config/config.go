@@ -214,11 +214,19 @@ func validateHookTimeout(d time.Duration) error {
 // validateSuppressions reports whether every entry in suppressions sets at
 // least one of Header or Host — an entry setting neither is a config error,
 // not a silent no-op, since suppressions has no flag/env layer to fall back
-// on for this check.
+// on for this check — and, if Expires is set, that it parses as the
+// required YYYY-MM-DD layout, the same config-load-time family of failure
+// an invalid -timeout/-hook-timeout value produces rather than a
+// runtime/scan-time error.
 func validateSuppressions(suppressions []scanner.Suppression) error {
 	for i, s := range suppressions {
 		if s.Header == "" && s.Host == "" {
 			return fmt.Errorf("suppressions[%d]: must set at least one of header or host", i)
+		}
+		if s.Expires != "" {
+			if _, err := scanner.ParseExpires(s.Expires); err != nil {
+				return fmt.Errorf("suppressions[%d]: expires: %w", i, err)
+			}
 		}
 	}
 	return nil

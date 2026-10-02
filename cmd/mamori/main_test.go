@@ -336,6 +336,39 @@ func TestRunTransportSuppressionPreventsFailOn(t *testing.T) {
 	}
 }
 
+func TestRunExpiredSuppressionNoLongerPreventsFailOnAndWarnsOnStderr(t *testing.T) {
+	url := headerServer(t, strongHeaders()) // plain HTTP: Transport is insecure regardless of headers
+
+	configPath := filepath.Join(t.TempDir(), "mamori.yaml")
+	config := "suppressions:\n" +
+		"  - header: Transport\n" +
+		"    expires: 2000-01-01\n"
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatalf("writing config file: %v", err)
+	}
+
+	r, w, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		t.Fatalf("creating pipe: %v", pipeErr)
+	}
+	origStderr := os.Stderr
+	os.Stderr = w
+	err := run([]string{"-config", configPath, "-fail-on", "high", url}, nil, io.Discard)
+	os.Stderr = origStderr
+	w.Close()
+	captured, readErr := io.ReadAll(r)
+	if readErr != nil {
+		t.Fatalf("reading captured stderr: %v", readErr)
+	}
+
+	if !errors.Is(err, errFailThreshold) {
+		t.Errorf("run() with an expired Transport suppression returned %v, want errFailThreshold", err)
+	}
+	if !strings.Contains(string(captured), "Transport") {
+		t.Errorf("stderr = %q, want it to name the expired Transport suppression", string(captured))
+	}
+}
+
 func TestRunPreScanHookFailureAbortsBeforeAnyRequest(t *testing.T) {
 	var requests int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

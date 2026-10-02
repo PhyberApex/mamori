@@ -106,6 +106,11 @@ type Finding struct {
 	// of status see no change. omitempty keeps it out of JSON entirely for
 	// the common case of no suppressions configured.
 	Suppressed bool `json:"suppressed,omitempty"`
+	// SuppressedReason carries the matching Suppression's optional reason,
+	// set only alongside Suppressed. omitempty follows the same convention
+	// as Suppressed itself: no reason configured means no field in the
+	// common case.
+	SuppressedReason string `json:"suppressedReason,omitempty"`
 }
 
 // Fails reports whether f should trip a -fail-on gate at the given

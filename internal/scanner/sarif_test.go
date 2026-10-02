@@ -243,6 +243,54 @@ func TestSarifReporterMarksSuppressedResultViaNativeSuppressionsField(t *testing
 	}
 }
 
+func TestSarifReporterCarriesReasonAsJustificationAndOmitsItOtherwise(t *testing.T) {
+	findings := []scanner.Finding{
+		{URL: "https://a.example", Header: "Content-Security-Policy", Status: scanner.StatusMissing, Severity: scanner.SeverityHigh, Suppressed: true, SuppressedReason: "accepted risk, tracked in JIRA-123"},
+		{URL: "https://a.example", Header: "X-Frame-Options", Status: scanner.StatusMissing, Severity: scanner.SeverityMedium, Suppressed: true},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.SarifReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	var doc struct {
+		Runs []struct {
+			Results []struct {
+				RuleID       string `json:"ruleId"`
+				Suppressions []struct {
+					Kind          string `json:"kind"`
+					Justification string `json:"justification"`
+				} `json:"suppressions"`
+			} `json:"results"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &doc); err != nil {
+		t.Fatalf("output is not valid JSON: %v\noutput:\n%s", err, buf.String())
+	}
+
+	byRule := map[string][]struct {
+		Kind          string `json:"kind"`
+		Justification string `json:"justification"`
+	}{}
+	for _, r := range doc.Runs[0].Results {
+		byRule[r.RuleID] = r.Suppressions
+	}
+
+	csp := byRule["Content-Security-Policy"]
+	if len(csp) != 1 || csp[0].Justification != "accepted risk, tracked in JIRA-123" {
+		t.Errorf("suppressed result's suppressions = %+v, want justification set to the configured reason", csp)
+	}
+
+	xfo := byRule["X-Frame-Options"]
+	if len(xfo) != 1 || xfo[0].Justification != "" {
+		t.Errorf("X-Frame-Options suppressions = %+v, want no justification: no reason was configured", xfo)
+	}
+	if strings.Count(buf.String(), "justification") != 1 {
+		t.Errorf("output should contain exactly one \"justification\" key (omitted for the unreasoned suppression)\noutput:\n%s", buf.String())
+	}
+}
+
 func TestSarifReporterEnvelopeAndLocation(t *testing.T) {
 	findings := []scanner.Finding{
 		{URL: "https://a.example", Header: "X-Frame-Options", Status: scanner.StatusMissing, Severity: scanner.SeverityMedium},

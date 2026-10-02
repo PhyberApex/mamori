@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/PhyberApex/mamori/internal/config"
 	"github.com/PhyberApex/mamori/internal/scanner"
@@ -117,7 +118,7 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 	client := &http.Client{Timeout: cfg.Timeout}
 	pathCheckers := scanner.PathCheckersFor(cfg.CheckExposedPaths, cfg.ExtraExposedPaths)
 	findings := scanner.Scan(ctx, client, scanner.DefaultCheckers(), scanner.DefaultBodyCheckers(), pathCheckers, urls, cfg.Workers, http.Header(cfg.Headers))
-	scanner.ApplySuppressions(findings, cfg.Suppressions)
+	scanner.ApplySuppressions(findings, cfg.Suppressions, time.Now(), os.Stderr)
 
 	// The post-scan hook's job (e.g. re-enabling a WAF the pre-scan hook
 	// disabled) must run whether or not the scan produced findings, so its

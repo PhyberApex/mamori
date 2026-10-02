@@ -349,6 +349,47 @@ func TestTerminalReporterMarksSuppressedFindings(t *testing.T) {
 	}
 }
 
+func TestTerminalReporterShowsReasonNextToSuppressedTag(t *testing.T) {
+	findings := []scanner.Finding{
+		{
+			URL:              "https://a.example",
+			Header:           "Content-Security-Policy",
+			Status:           scanner.StatusMissing,
+			Severity:         scanner.SeverityHigh,
+			Suppressed:       true,
+			SuppressedReason: "accepted risk, tracked in JIRA-123",
+		},
+		{
+			URL:        "https://a.example",
+			Header:     "X-Frame-Options",
+			Status:     scanner.StatusMissing,
+			Severity:   scanner.SeverityMedium,
+			Suppressed: true,
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.TerminalReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	var cspLine, xfoLine string
+	for _, line := range strings.Split(buf.String(), "\n") {
+		if strings.Contains(line, "Content-Security-Policy") {
+			cspLine = line
+		}
+		if strings.Contains(line, "X-Frame-Options") {
+			xfoLine = line
+		}
+	}
+	if !strings.Contains(cspLine, "[SUPPRESSED]") || !strings.Contains(cspLine, "accepted risk, tracked in JIRA-123") {
+		t.Errorf("suppressed finding's line = %q, want it to contain [SUPPRESSED] and the reason", cspLine)
+	}
+	if !strings.HasSuffix(xfoLine, "[SUPPRESSED]") {
+		t.Errorf("suppressed finding's line = %q, want it to end with [SUPPRESSED] and no trailing reason text", xfoLine)
+	}
+}
+
 func TestJSONReporterEmitsOneFindingPerLine(t *testing.T) {
 	findings := []scanner.Finding{
 		{
@@ -500,5 +541,51 @@ func TestJSONReporterMarksSuppressedFindingWithoutChangingStatus(t *testing.T) {
 	}
 	if _, present := unsuppressed["suppressed"]; present {
 		t.Errorf("unsuppressed finding has a %q key, want it omitted", "suppressed")
+	}
+}
+
+func TestJSONReporterCarriesReasonOnSuppressedFindingAndOmitsItOtherwise(t *testing.T) {
+	findings := []scanner.Finding{
+		{
+			URL:              "https://a.example",
+			Header:           "Content-Security-Policy",
+			Status:           scanner.StatusMissing,
+			Severity:         scanner.SeverityHigh,
+			Suppressed:       true,
+			SuppressedReason: "accepted risk, tracked in JIRA-123",
+		},
+		{
+			URL:        "https://a.example",
+			Header:     "X-Frame-Options",
+			Status:     scanner.StatusMissing,
+			Severity:   scanner.SeverityMedium,
+			Suppressed: true,
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.JSONReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("got %d lines, want one per finding (2)\noutput:\n%s", len(lines), buf.String())
+	}
+
+	var withReason map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &withReason); err != nil {
+		t.Fatalf("line 1 is not valid JSON: %v\nline: %s", err, lines[0])
+	}
+	if withReason["suppressedReason"] != "accepted risk, tracked in JIRA-123" {
+		t.Errorf("withReason finding suppressedReason = %v, want the configured reason", withReason["suppressedReason"])
+	}
+
+	var withoutReason map[string]any
+	if err := json.Unmarshal([]byte(lines[1]), &withoutReason); err != nil {
+		t.Fatalf("line 2 is not valid JSON: %v\nline: %s", err, lines[1])
+	}
+	if _, present := withoutReason["suppressedReason"]; present {
+		t.Errorf("finding with no configured reason has a %q key, want it omitted", "suppressedReason")
 	}
 }
