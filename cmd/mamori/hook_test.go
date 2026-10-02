@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -45,6 +46,9 @@ func TestRunHookReportsNonZeroExit(t *testing.T) {
 	if !strings.Contains(err.Error(), "post-scan hook") {
 		t.Errorf("runHook() error = %q, want it to name the post-scan hook", err.Error())
 	}
+	if !errors.Is(err, errHookFailed) {
+		t.Errorf("runHook() error = %v, want errHookFailed", err)
+	}
 }
 
 func TestRunHookReportsTimeout(t *testing.T) {
@@ -55,6 +59,9 @@ func TestRunHookReportsTimeout(t *testing.T) {
 	}
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Errorf("runHook() error = %v, want a timeout error", err)
+	}
+	if !errors.Is(err, errHookFailed) {
+		t.Errorf("runHook() error = %v, want errHookFailed", err)
 	}
 }
 
