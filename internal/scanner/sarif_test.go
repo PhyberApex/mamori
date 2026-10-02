@@ -291,6 +291,81 @@ func TestSarifReporterCarriesReasonAsJustificationAndOmitsItOtherwise(t *testing
 	}
 }
 
+func TestSarifReporterAddsFinalURLPropertyAndOmitsItOtherwise(t *testing.T) {
+	findings := []scanner.Finding{
+		{URL: "https://a.example", Header: "Transport", Status: scanner.StatusInsecure, Severity: scanner.SeverityHigh, FinalURL: "https://b.example/login"},
+		{URL: "https://a.example", Header: "X-Frame-Options", Status: scanner.StatusMissing, Severity: scanner.SeverityMedium},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.SarifReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	var doc struct {
+		Runs []struct {
+			Results []struct {
+				RuleID    string `json:"ruleId"`
+				Locations []struct {
+					PhysicalLocation struct {
+						ArtifactLocation struct {
+							URI string `json:"uri"`
+						} `json:"artifactLocation"`
+					} `json:"physicalLocation"`
+				} `json:"locations"`
+				Properties *struct {
+					FinalURL string `json:"finalUrl"`
+				} `json:"properties"`
+			} `json:"results"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &doc); err != nil {
+		t.Fatalf("output is not valid JSON: %v\noutput:\n%s", err, buf.String())
+	}
+
+	var transport, xfo *struct {
+		RuleID    string `json:"ruleId"`
+		Locations []struct {
+			PhysicalLocation struct {
+				ArtifactLocation struct {
+					URI string `json:"uri"`
+				} `json:"artifactLocation"`
+			} `json:"physicalLocation"`
+		} `json:"locations"`
+		Properties *struct {
+			FinalURL string `json:"finalUrl"`
+		} `json:"properties"`
+	}
+	for i, r := range doc.Runs[0].Results {
+		switch r.RuleID {
+		case "Transport":
+			transport = &doc.Runs[0].Results[i]
+		case "X-Frame-Options":
+			xfo = &doc.Runs[0].Results[i]
+		}
+	}
+
+	if transport == nil {
+		t.Fatal("no Transport result found")
+	}
+	if uri := transport.Locations[0].PhysicalLocation.ArtifactLocation.URI; uri != "https://a.example" {
+		t.Errorf("Transport location URI = %q, want %q (stays the typed target)", uri, "https://a.example")
+	}
+	if transport.Properties == nil || transport.Properties.FinalURL != "https://b.example/login" {
+		t.Errorf("Transport properties = %+v, want finalUrl %q", transport.Properties, "https://b.example/login")
+	}
+
+	if xfo == nil {
+		t.Fatal("no X-Frame-Options result found")
+	}
+	if xfo.Properties != nil {
+		t.Errorf("X-Frame-Options properties = %+v, want nil (no properties object at all)", xfo.Properties)
+	}
+	if strings.Count(buf.String(), "properties") != 1 {
+		t.Errorf("output should contain exactly one \"properties\" key\noutput:\n%s", buf.String())
+	}
+}
+
 func TestSarifReporterEnvelopeAndLocation(t *testing.T) {
 	findings := []scanner.Finding{
 		{URL: "https://a.example", Header: "X-Frame-Options", Status: scanner.StatusMissing, Severity: scanner.SeverityMedium},

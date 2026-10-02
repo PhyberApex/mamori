@@ -67,6 +67,24 @@ func statusTag(f Finding, color bool) string {
 	return colorize(color, c, "MISSING")
 }
 
+// distinctFinalURLs returns the non-empty FinalURL values among fs, each
+// once, in first-encountered order. Ordinarily at most one: the plain scan
+// response and the CORS-probe response usually land on the same redirect
+// target, but they're judged independently (see setFinalURL in scan.go) and
+// can in principle differ.
+func distinctFinalURLs(fs []Finding) []string {
+	var finals []string
+	seen := map[string]bool{}
+	for _, f := range fs {
+		if f.FinalURL == "" || seen[f.FinalURL] {
+			continue
+		}
+		seen[f.FinalURL] = true
+		finals = append(finals, f.FinalURL)
+	}
+	return finals
+}
+
 // TerminalReporter renders findings as human-readable text. Color is opt-in
 // rather than inferred from the writer, since the decision of whether the
 // destination is an interactive terminal (and whether NO_COLOR is set)
@@ -89,6 +107,11 @@ func (t TerminalReporter) Report(findings []Finding, w io.Writer) error {
 	for _, url := range urls {
 		if _, err := fmt.Fprintf(w, "%s\n", colorize(t.Color, ansiBold, url)); err != nil {
 			return err
+		}
+		for _, final := range distinctFinalURLs(byURL[url]) {
+			if _, err := fmt.Fprintf(w, "  → redirected to %s\n", final); err != nil {
+				return err
+			}
 		}
 		for _, f := range byURL[url] {
 			var line string

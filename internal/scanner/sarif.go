@@ -46,6 +46,16 @@ type sarifResult struct {
 	Message      sarifText          `json:"message"`
 	Locations    []sarifLocation    `json:"locations"`
 	Suppressions []sarifSuppression `json:"suppressions,omitempty"`
+	Properties   *sarifProperties   `json:"properties,omitempty"`
+}
+
+// sarifProperties carries Finding.FinalURL (see the Final URL glossary
+// entry, CONTEXT.md) as a result-level property rather than the location
+// URI, so results keep grouping by the target the user named (Locations[0]
+// stays f.URL). A pointer, not a value, so omitempty actually omits it: a
+// zero-value struct is never "empty" to encoding/json, only a nil pointer is.
+type sarifProperties struct {
+	FinalURL string `json:"finalUrl,omitempty"`
 }
 
 // sarifSuppression represents a suppressed result via SARIF's native
@@ -175,6 +185,9 @@ func sarifRuleAndResult(f Finding) (sarifRule, sarifResult) {
 	}
 	if f.Suppressed {
 		result.Suppressions = []sarifSuppression{{Kind: sarifSuppressionExternal, Justification: f.SuppressedReason}}
+	}
+	if f.FinalURL != "" {
+		result.Properties = &sarifProperties{FinalURL: f.FinalURL}
 	}
 	return rule, result
 }
