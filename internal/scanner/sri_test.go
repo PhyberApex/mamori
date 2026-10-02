@@ -1,12 +1,13 @@
 package scanner_test
 
 import (
+	"net/url"
 	"testing"
 
 	"github.com/PhyberApex/mamori/internal/scanner"
 )
 
-const sriTargetURL = "https://example.com/"
+var sriTargetURL, _ = url.Parse("https://example.com/")
 
 func TestSRICheckerFlagsCrossOriginWithoutIntegrity(t *testing.T) {
 	tests := []struct {
@@ -77,13 +78,6 @@ func TestSRICheckerReportsEachOffendingTagIndependently(t *testing.T) {
 	findings := scanner.SRIChecker{}.CheckBody([]byte(body), sriTargetURL)
 	if len(findings) != 2 {
 		t.Fatalf("CheckBody() returned %d findings, want 2", len(findings))
-	}
-}
-
-func TestSRICheckerHandlesUnparseableTargetURL(t *testing.T) {
-	findings := scanner.SRIChecker{}.CheckBody([]byte(`<script src="https://cdn.example.net/a.js"></script>`), "://not-a-url")
-	if findings != nil {
-		t.Fatalf("CheckBody() with an unparseable target URL = %+v, want nil", findings)
 	}
 }
 

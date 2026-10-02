@@ -155,6 +155,49 @@ func TestSarifReporterRendersExposedFindingWithoutHeaderWording(t *testing.T) {
 	}
 }
 
+func TestSarifReporterRendersInsecureTransportFinding(t *testing.T) {
+	findings := []scanner.Finding{
+		{URL: "http://a.example", Header: "Transport", Status: scanner.StatusInsecure, Severity: scanner.SeverityHigh, Message: "the response was served over plain HTTP"},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.SarifReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	var doc struct {
+		Runs []struct {
+			Results []struct {
+				RuleID  string `json:"ruleId"`
+				Level   string `json:"level"`
+				Message struct {
+					Text string `json:"text"`
+				} `json:"message"`
+			} `json:"results"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &doc); err != nil {
+		t.Fatalf("output is not valid JSON: %v\noutput:\n%s", err, buf.String())
+	}
+
+	if len(doc.Runs[0].Results) != 1 {
+		t.Fatalf("got %d results, want 1", len(doc.Runs[0].Results))
+	}
+	result := doc.Runs[0].Results[0]
+	if result.RuleID != "Transport" {
+		t.Errorf("ruleId = %q, want %q", result.RuleID, "Transport")
+	}
+	if result.Level != "error" {
+		t.Errorf("level = %q, want %q (high severity)", result.Level, "error")
+	}
+	if strings.Contains(result.Message.Text, "Transport header") {
+		t.Errorf("message = %q, want no \"Transport header\" wording: Transport isn't a real response header", result.Message.Text)
+	}
+	if !strings.Contains(result.Message.Text, "the response was served over plain HTTP") {
+		t.Errorf("message = %q, want it to include the finding's own message", result.Message.Text)
+	}
+}
+
 func TestSarifReporterMarksSuppressedResultViaNativeSuppressionsField(t *testing.T) {
 	findings := []scanner.Finding{
 		{URL: "https://a.example", Header: "Content-Security-Policy", Status: scanner.StatusMissing, Severity: scanner.SeverityHigh, Suppressed: true},

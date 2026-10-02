@@ -2,15 +2,20 @@ package scanner_test
 
 import (
 	"net/http"
+	"net/url"
 	"testing"
 
 	"github.com/PhyberApex/mamori/internal/scanner"
 )
 
 func TestRunAllFansOutAcrossDefaultCheckers(t *testing.T) {
+	respURL, err := url.Parse("https://example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
 	findings := scanner.RunAll(scanner.DefaultCheckers(), http.Header{
 		"Content-Security-Policy": {"default-src 'self'"},
-	})
+	}, respURL)
 
 	statusByHeader := map[string]scanner.Status{}
 	for _, f := range findings {
@@ -22,6 +27,7 @@ func TestRunAllFansOutAcrossDefaultCheckers(t *testing.T) {
 	// itself a finding) and the expected count/map below is unaffected by
 	// its inclusion in DefaultCheckers().
 	want := map[string]scanner.Status{
+		"Transport":                    scanner.StatusPass,
 		"Strict-Transport-Security":    scanner.StatusMissing,
 		"X-Content-Type-Options":       scanner.StatusMissing,
 		"X-Frame-Options":              scanner.StatusMissing,

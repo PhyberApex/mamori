@@ -23,6 +23,8 @@ Strict-Transport-Security: max-age=63072000; includeSubDomains
 
 Presence of the header, and that `max-age` actually enforces HTTPS. A missing or empty header is reported as a high-severity finding. A present header with a missing, unparseable, or non-positive `max-age` (e.g. `max-age=0`) is reported as `WEAK` — it disables HSTS just as effectively as not sending the header at all.
 
+This check only runs against responses received over `https://` (after following any redirects); a plain `http://` response produces no finding at all, since browsers ignore `Strict-Transport-Security` outside HTTPS (RFC 6797 §8.1).
+
 ## Further reading
 
 - [MDN: Strict-Transport-Security](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Strict-Transport-Security)

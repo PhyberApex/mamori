@@ -24,6 +24,14 @@ var allSecurityHeaders = map[string]string{
 	"X-XSS-Protection":             "0",
 }
 
+// scanOne drives an httptest.NewServer (plain HTTP) target through Scan with
+// DefaultCheckers. That's 10 findings, not the full 11 DefaultCheckers can
+// produce: HSTSChecker is not Applicable to a plain-HTTP response (the
+// Applicable glossary entry, CONTEXT.md, PR #92) and contributes no Finding
+// at all here, regardless of the Strict-Transport-Security value the handler
+// sends. TransportChecker, unlike every other default Checker, always
+// contributes a Finding regardless of headers — StatusInsecure here, since
+// the server is plain HTTP.
 func scanOne(t *testing.T, handler http.Handler) []scanner.Finding {
 	t.Helper()
 	srv := httptest.NewServer(handler)
@@ -41,9 +49,18 @@ func scanOne(t *testing.T, handler http.Handler) []scanner.Finding {
 	return findings
 }
 
+// assertAllStatus asserts every finding matches want, except TransportChecker's:
+// on a plain-HTTP scanOne target it's always StatusInsecure regardless of
+// what headers the handler sends, unlike every other default Checker.
 func assertAllStatus(t *testing.T, findings []scanner.Finding, want scanner.Status) {
 	t.Helper()
 	for _, f := range findings {
+		if f.Header == "Transport" {
+			if f.Status != scanner.StatusInsecure {
+				t.Errorf("%s status = %q, want %q", f.Header, f.Status, scanner.StatusInsecure)
+			}
+			continue
+		}
 		if f.Status != want {
 			t.Errorf("%s status = %q, want %q", f.Header, f.Status, want)
 		}
@@ -75,6 +92,153 @@ func TestScanFallsBackToGETWhenHEADRejected(t *testing.T) {
 		}
 	}))
 	assertAllStatus(t, findings, scanner.StatusPass)
+}
+
+// TestScanHSTSAppliesOnlyToTheFinalResponseScheme drives HSTSChecker through
+// Scan across every scheme/redirect combination the Applicable glossary
+// entry (CONTEXT.md, PR #92) covers: applicability is judged on the scheme
+// of the final response after redirects, not the URL the caller typed.
+func TestScanHSTSAppliesOnlyToTheFinalResponseScheme(t *testing.T) {
+	t.Run("direct HTTP with no HSTS produces no finding", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		t.Cleanup(srv.Close)
+
+		findings := scanner.Scan(t.Context(), srv.Client(), []scanner.Checker{scanner.HSTSChecker{}}, nil, nil, []string{srv.URL}, 1, nil)
+		if len(findings) != 0 {
+			t.Fatalf("Scan() returned %d findings, want 0 (HSTS is not Applicable to a plain-HTTP response): %+v", len(findings), findings)
+		}
+	})
+
+	t.Run("direct HTTPS with no HSTS reports missing", func(t *testing.T) {
+		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		t.Cleanup(srv.Close)
+
+		findings := scanner.Scan(t.Context(), srv.Client(), []scanner.Checker{scanner.HSTSChecker{}}, nil, nil, []string{srv.URL}, 1, nil)
+		if len(findings) != 1 {
+			t.Fatalf("Scan() returned %d findings, want 1: %+v", len(findings), findings)
+		}
+		if findings[0].Status != scanner.StatusMissing {
+			t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusMissing)
+		}
+	})
+
+	t.Run("HTTP redirecting to HTTPS with HSTS reports pass", func(t *testing.T) {
+		tlsSrv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Strict-Transport-Security", "max-age=63072000")
+		}))
+		t.Cleanup(tlsSrv.Close)
+		plainSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, tlsSrv.URL, http.StatusFound)
+		}))
+		t.Cleanup(plainSrv.Close)
+
+		// tlsSrv.Client() trusts the TLS test server's self-signed
+		// certificate; it works fine for the initial plain-HTTP request too,
+		// since scheme only affects the transport, not which client can send
+		// the request.
+		findings := scanner.Scan(t.Context(), tlsSrv.Client(), []scanner.Checker{scanner.HSTSChecker{}}, nil, nil, []string{plainSrv.URL}, 1, nil)
+		if len(findings) != 1 {
+			t.Fatalf("Scan() returned %d findings, want 1: %+v", len(findings), findings)
+		}
+		f := findings[0]
+		if f.Status != scanner.StatusPass {
+			t.Errorf("Status = %q, want %q (judged on the HTTPS response after the redirect, not the http:// URL requested)", f.Status, scanner.StatusPass)
+		}
+		if f.URL != plainSrv.URL {
+			t.Errorf("URL = %q, want %q (a Finding stays keyed by the URL the caller typed, not the redirect target)", f.URL, plainSrv.URL)
+		}
+	})
+
+	t.Run("HTTP redirecting to HTTPS without HSTS reports missing", func(t *testing.T) {
+		tlsSrv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		t.Cleanup(tlsSrv.Close)
+		plainSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, tlsSrv.URL, http.StatusFound)
+		}))
+		t.Cleanup(plainSrv.Close)
+
+		findings := scanner.Scan(t.Context(), tlsSrv.Client(), []scanner.Checker{scanner.HSTSChecker{}}, nil, nil, []string{plainSrv.URL}, 1, nil)
+		if len(findings) != 1 {
+			t.Fatalf("Scan() returned %d findings, want 1: %+v", len(findings), findings)
+		}
+		if findings[0].Status != scanner.StatusMissing {
+			t.Errorf("Status = %q, want %q (the redirect target's own missing HSTS is a real gap, not hidden by the http:// URL requested)", findings[0].Status, scanner.StatusMissing)
+		}
+	})
+
+	t.Run("HTTPS redirecting down to HTTP produces no finding", func(t *testing.T) {
+		plainSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		t.Cleanup(plainSrv.Close)
+		tlsSrv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, plainSrv.URL, http.StatusFound)
+		}))
+		t.Cleanup(tlsSrv.Close)
+
+		findings := scanner.Scan(t.Context(), tlsSrv.Client(), []scanner.Checker{scanner.HSTSChecker{}}, nil, nil, []string{tlsSrv.URL}, 1, nil)
+		if len(findings) != 0 {
+			t.Fatalf("Scan() returned %d findings, want 0 (the final response is plain HTTP, so HSTS is not Applicable): %+v", len(findings), findings)
+		}
+	})
+}
+
+// TestScanTransportChecker drives TransportChecker through Scan across the
+// same direct/redirect combinations TestScanHSTSAppliesOnlyToTheFinalResponseScheme
+// covers for HSTSChecker: unlike HSTS, Transport judges every response
+// regardless of scheme, contributing exactly one Finding every time.
+func TestScanTransportChecker(t *testing.T) {
+	t.Run("direct HTTPS reports pass", func(t *testing.T) {
+		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		t.Cleanup(srv.Close)
+
+		findings := scanner.Scan(t.Context(), srv.Client(), []scanner.Checker{scanner.TransportChecker{}}, nil, nil, []string{srv.URL}, 1, nil)
+		if len(findings) != 1 {
+			t.Fatalf("Scan() returned %d findings, want 1: %+v", len(findings), findings)
+		}
+		if findings[0].Status != scanner.StatusPass {
+			t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
+		}
+	})
+
+	t.Run("direct HTTP reports insecure", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		t.Cleanup(srv.Close)
+
+		findings := scanner.Scan(t.Context(), srv.Client(), []scanner.Checker{scanner.TransportChecker{}}, nil, nil, []string{srv.URL}, 1, nil)
+		if len(findings) != 1 {
+			t.Fatalf("Scan() returned %d findings, want 1: %+v", len(findings), findings)
+		}
+		f := findings[0]
+		if f.Status != scanner.StatusInsecure {
+			t.Errorf("Status = %q, want %q", f.Status, scanner.StatusInsecure)
+		}
+		if f.Message == "" {
+			t.Error("Message is empty, want an explanation")
+		}
+	})
+
+	// A target typed as https:// that redirects down to an http:// URL: the
+	// final response Scan judges is the plain-HTTP one, so this must report
+	// insecure even though the caller typed https://.
+	t.Run("HTTPS redirecting down to HTTP reports insecure", func(t *testing.T) {
+		plainSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		t.Cleanup(plainSrv.Close)
+		tlsSrv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, plainSrv.URL, http.StatusFound)
+		}))
+		t.Cleanup(tlsSrv.Close)
+
+		findings := scanner.Scan(t.Context(), tlsSrv.Client(), []scanner.Checker{scanner.TransportChecker{}}, nil, nil, []string{tlsSrv.URL}, 1, nil)
+		if len(findings) != 1 {
+			t.Fatalf("Scan() returned %d findings, want 1: %+v", len(findings), findings)
+		}
+		f := findings[0]
+		if f.Status != scanner.StatusInsecure {
+			t.Errorf("Status = %q, want %q (judged on the final HTTP response after the downgrade redirect)", f.Status, scanner.StatusInsecure)
+		}
+		if f.URL != tlsSrv.URL {
+			t.Errorf("URL = %q, want %q (a Finding stays keyed by the URL the caller typed, not the redirect target)", f.URL, tlsSrv.URL)
+		}
+	})
 }
 
 func TestScanSkipsBodyFetchWhenNoBodyCheckersConfigured(t *testing.T) {
@@ -154,7 +318,7 @@ func TestScanCoversMultipleURLs(t *testing.T) {
 
 	findings := scanner.Scan(t.Context(), srvA.Client(), scanner.DefaultCheckers(), nil, nil, []string{srvA.URL, srvB.URL}, 2, nil)
 	if len(findings) != 20 {
-		t.Fatalf("Scan() returned %d findings, want 20 (10 per URL)", len(findings))
+		t.Fatalf("Scan() returned %d findings, want 20 (10 per URL; both are plain HTTP, so HSTS is not Applicable)", len(findings))
 	}
 }
 
@@ -220,7 +384,7 @@ func TestScanReportsAllTargetsDespiteFailures(t *testing.T) {
 		t.Errorf("dead target has %d findings, want 1 error finding", got)
 	}
 	if got := len(byURL[healthy.URL]); got != 10 {
-		t.Errorf("healthy target has %d findings, want 10", got)
+		t.Errorf("healthy target has %d findings, want 10 (plain HTTP, so HSTS is not Applicable)", got)
 	}
 }
 
@@ -246,7 +410,7 @@ func TestScanRunsTargetsConcurrently(t *testing.T) {
 
 	assertAllStatus(t, findings, scanner.StatusMissing)
 	if len(findings) != targets*10 {
-		t.Fatalf("Scan() returned %d findings, want %d", len(findings), targets*10)
+		t.Fatalf("Scan() returned %d findings, want %d (plain HTTP, so HSTS is not Applicable)", len(findings), targets*10)
 	}
 }
 
