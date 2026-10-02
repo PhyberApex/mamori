@@ -5,24 +5,16 @@ A concurrent scanner that checks HTTP(S) endpoints for missing or misconfigured 
 ## Language
 
 **Checker**:
-A single security-header rule that inspects a response's headers and produces zero or more Findings.
+A single rule that judges one response — its headers, or (for Transport) the scheme it arrived over — and produces zero or more Findings.
 _Avoid_: Rule, Validator, Inspector.
 
 **Finding**:
-The result of running one Checker against one target — a Status, a Severity, a reference link, and (when the Status is `weak`, `exposed`, or `insecure`) a message explaining what's wrong. Its `header` field names the specific thing being reported on: a header name for a Checker/BodyChecker Finding, the probed path (e.g. `.git/config`) for a PathChecker Finding, or the literal string `"Transport"` for TransportChecker's Finding, which isn't a real response header — reused rather than adding a path/transport-specific field, so every reporter renders all three kinds through the same field.
+The result of running one Checker against one target — a Status, a Severity, a reference link, and (when the Status is `weak`, `exposed`, or `insecure`) a message explaining what's wrong. Its `header` field names the specific thing being reported on: a header name for a Checker/BodyChecker Finding, the literal `Transport` for a Transport Finding, or the probed path (e.g. `.git/config`) for a PathChecker Finding — reused rather than adding a path-specific field, so every reporter renders every kind through the same field.
 _Avoid_: Result, Issue, Violation.
 
 **Status**:
-Where a header landed after a Checker ran: `pass` (present and effective), `missing` (absent or blank), `weak` (present but a known no-op value), `exposed` (a PathChecker's probed path was confirmed reachable), `insecure` (TransportChecker's Finding for a response that arrived over plain HTTP rather than HTTPS), `error` (the scan itself failed, e.g. an unreachable target).
+Where a Finding landed after a Checker ran: `pass` (present and effective), `missing` (absent or blank), `weak` (present but a known no-op value), `exposed` (a PathChecker's probed path was confirmed reachable), `insecure` (the judged response arrived over plain HTTP), `error` (the scan itself failed, e.g. an unreachable target).
 _Avoid_: Result, Outcome.
-
-**Transport**:
-The scheme of the final response a scan actually judged, after any redirects — the same `respURL` every `Checker.Check` already receives, and the field HSTSChecker already reads to decide whether it's Applicable. TransportChecker is the Checker that judges it directly: `pass` for `https`, `insecure` for `http`, regardless of whether the target was typed as `http://` or a redirect chain downgraded it from `https://`. Unlike every other Checker, it ignores `headers` entirely — there's no header that says which scheme a response arrived over.
-_Avoid_: Scheme — `Transport` names the security property being judged (is this connection protected in transit), not just the URL component it's read from.
-
-**Insecure**:
-A Status for TransportChecker's Finding on a response that arrived over plain HTTP. Kept distinct from `missing`/`weak`/`exposed`, none of which describe the transport itself — every other Status describes a header or path judged on top of whatever transport the response arrived over. A target deliberately served over plain HTTP (e.g. a local dev server) opts out with an ordinary Suppression (`{header: "Transport"}`), the same mechanism every other false-positive Finding uses — there's no separate flag, env var, or loopback special-case for this.
-_Avoid_: Downgrade, Cleartext — `insecure` is the Status name the code and every reporter actually use; these describe the underlying condition, not the identifier.
 
 **PathChecker**:
 A checker category parallel to Checker (headers) and BodyChecker (body): declares a path to probe at a target's origin and judges the probe response's status code rather than headers or a body. Off by default and opt-in only (`-check-exposed-paths` / `MAMORI_CHECK_EXPOSED_PATHS` / `checkExposedPaths`, plus `-exposed-path` / `exposedPaths` to extend the built-in path list), since it issues requests to paths beyond the one the user named as a target. Before probing any configured path for a target, Scan sends one baseline probe to a randomized, deliberately-nonexistent path; a target that doesn't answer that with `404` is treated as unreliable for this check (a soft-404/catch-all server) and produces a single `error` Finding instead of probing anything configured.
@@ -59,3 +51,15 @@ _Avoid_: Plugin, Callback — a Hook is a single, user-owned command mamori shel
 **X-XSS-Protection** (inverted pass/weak logic):
 Most Checkers treat "header present with a strong value" as `pass` and "absent" as `missing` — more of the header is better. XSSProtectionChecker inverts this: the header controls a legacy browser XSS filter that current browsers have removed (Chrome 78+, Edge) or never implemented (Firefox), and *enabling* it is itself a documented exploit vector (e.g. `mode=block` as an XS-Leak side-channel) on browsers that still honor it. So `pass` is exactly `X-XSS-Protection: 0` (explicit disable); any enabled value (`1`, `1; mode=block`, `1; report=<URI>`) or unrecognized value is `weak`; absence is `missing` (low severity — nudges toward the unambiguous `0` rather than trusting browser defaults). Before assuming a new Checker follows the "more is better" pattern, check whether the header's current best-practice guidance has shifted like this one has.
 _Avoid_: treating this as a template for other legacy headers without checking their own current guidance first — the inversion is specific to this header's history, not a general rule.
+
+**Applicable**:
+Whether a header can have any effect for the transport the response arrived over, judged by the scheme of the response the scanner actually received (after redirects), not the URL the user typed. HSTS is not applicable over plain HTTP because browsers must ignore it there. A Checker whose header is not applicable produces no Finding at all, since neither `pass` nor `missing` would be true.
+_Avoid_: Skipped, Ignored — those suggest the scanner chose not to look; the header simply cannot matter on that transport.
+
+**Transport**:
+The scheme of the response the scanner actually judged, after redirects — the same response Applicable is judged against. `https` is `pass`; `http` is `insecure`, whether the target was typed as `http://` or was redirected down from `https://`. Only the final response counts: a redirect chain that passes through plain HTTP but ends on HTTPS is not judged. A target deliberately served over plain HTTP (e.g. a local dev server) is marked with a Suppression on `Transport`, not exempted.
+_Avoid_: Downgrade — names only one of the two ways a response ends up on plain HTTP; Scheme — names the mechanism, not the security property.
+
+**Insecure**:
+A Status for a Transport Finding whose response arrived over plain HTTP. Kept distinct from `missing`/`weak`, which describe header state, and `exposed`, which describes a probed path — none of them fit a response whose whole transport provides no protection.
+_Avoid_: Plaintext, Unencrypted — describe the symptom rather than naming the problem in the same register as `weak`/`exposed`.
