@@ -196,7 +196,7 @@ func TestTerminalReporterShowsRedirectLineUnderTargetHeader(t *testing.T) {
 	if urlIdx == -1 || redirectIdx == -1 || xfoIdx == -1 {
 		t.Fatalf("missing expected lines\noutput:\n%s", buf.String())
 	}
-	if !(urlIdx < redirectIdx && redirectIdx < xfoIdx) {
+	if urlIdx >= redirectIdx || redirectIdx >= xfoIdx {
 		t.Errorf("want redirect line directly under the target header and before its findings\noutput:\n%s", buf.String())
 	}
 
