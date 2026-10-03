@@ -230,7 +230,14 @@ func cspWeakness(value string) (weak bool, message string) {
 
 type ReferrerPolicyChecker struct{}
 
+// Check returns no Finding at all when the response is not a Document
+// (CONTEXT.md, ADR-0001): Referrer-Policy only governs how a browser treats
+// a page, so it cannot apply to a response that declares a non-document
+// Content-Type.
 func (ReferrerPolicyChecker) Check(headers http.Header, _ *url.URL) []Finding {
+	if !isDocument(headers) {
+		return nil
+	}
 	return checkValue(
 		headers,
 		"Referrer-Policy",
@@ -284,7 +291,14 @@ func effectiveReferrerPolicy(value string) string {
 
 type COOPChecker struct{}
 
+// Check returns no Finding at all when the response is not a Document
+// (CONTEXT.md, ADR-0001): Cross-Origin-Opener-Policy only governs how a
+// browser treats a page, so it cannot apply to a response that declares a
+// non-document Content-Type.
 func (COOPChecker) Check(headers http.Header, _ *url.URL) []Finding {
+	if !isDocument(headers) {
+		return nil
+	}
 	return checkValue(
 		headers,
 		"Cross-Origin-Opener-Policy",
@@ -311,7 +325,14 @@ func coopWeakness(value string) (weak bool, message string) {
 
 type COEPChecker struct{}
 
+// Check returns no Finding at all when the response is not a Document
+// (CONTEXT.md, ADR-0001): Cross-Origin-Embedder-Policy only governs how a
+// browser treats a page, so it cannot apply to a response that declares a
+// non-document Content-Type.
 func (COEPChecker) Check(headers http.Header, _ *url.URL) []Finding {
+	if !isDocument(headers) {
+		return nil
+	}
 	return checkValue(
 		headers,
 		"Cross-Origin-Embedder-Policy",
@@ -380,7 +401,14 @@ const xssProtectionReference = "https://developer.mozilla.org/en-US/docs/Web/HTT
 // rather than trusting browser defaults).
 type XSSProtectionChecker struct{}
 
+// Check returns no Finding at all when the response is not a Document
+// (CONTEXT.md, ADR-0001): X-XSS-Protection only governs how a browser treats
+// a page, so it cannot apply to a response that declares a non-document
+// Content-Type.
 func (XSSProtectionChecker) Check(headers http.Header, _ *url.URL) []Finding {
+	if !isDocument(headers) {
+		return nil
+	}
 	return checkValue(
 		headers,
 		"X-XSS-Protection",
@@ -500,7 +528,14 @@ func cookieFindings(cookie *http.Cookie) []Finding {
 
 type PermissionsPolicyChecker struct{}
 
+// Check returns no Finding at all when the response is not a Document
+// (CONTEXT.md, ADR-0001): Permissions-Policy only governs how a browser
+// treats a page, so it cannot apply to a response that declares a
+// non-document Content-Type.
 func (PermissionsPolicyChecker) Check(headers http.Header, _ *url.URL) []Finding {
+	if !isDocument(headers) {
+		return nil
+	}
 	return checkPresence(
 		headers,
 		"Permissions-Policy",
@@ -626,6 +661,26 @@ func firstNonBlankValue(headers http.Header, name string) string {
 		}
 	}
 	return ""
+}
+
+// isDocument reports whether headers declare the response a Document
+// (CONTEXT.md, ADR-0001): a Content-Type of text/html or
+// application/xhtml+xml, matched case-insensitively on the media type and
+// ignoring any parameters (e.g. charset), or no declared Content-Type at
+// all (including a blank one) — only a positively declared non-document
+// type narrows a Checker's applicability.
+func isDocument(headers http.Header) bool {
+	contentType := strings.TrimSpace(headers.Get("Content-Type"))
+	if contentType == "" {
+		return true
+	}
+	mediaType, _, _ := strings.Cut(contentType, ";")
+	switch strings.ToLower(strings.TrimSpace(mediaType)) {
+	case "text/html", "application/xhtml+xml":
+		return true
+	default:
+		return false
+	}
 }
 
 func checkPresence(headers http.Header, name string, severity Severity, reference string) []Finding {

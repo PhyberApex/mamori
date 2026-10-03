@@ -921,3 +921,170 @@ func TestCORSDifferentCasedReflectedOriginProducesNoFindings(t *testing.T) {
 		t.Errorf("Check() on a different-cased reflected origin returned %d findings, want 0: %+v", len(findings), findings)
 	}
 }
+
+// headersWith builds headers via Set rather than a map literal so header
+// names are canonicalized the same way net/http canonicalizes headers parsed
+// off the wire (see TestCheckersIdentity above) — a raw literal key like
+// "X-XSS-Protection" (whose canonical form is "X-Xss-Protection") wouldn't be
+// found by Check()'s own Get()/Values() calls. An empty headerValue leaves
+// the header unset entirely rather than setting it to blank.
+func headersWith(contentType, headerName, headerValue string) http.Header {
+	headers := http.Header{}
+	if contentType != "" {
+		headers.Set("Content-Type", contentType)
+	}
+	if headerValue != "" {
+		headers.Set(headerName, headerValue)
+	}
+	return headers
+}
+
+// documentOnlyCheckers lists the five Checkers CONTEXT.md's Applicable entry
+// and ADR-0001 narrow to Documents: they must produce zero Findings on a
+// response that declares a non-Document Content-Type, present header, weak
+// header, or missing header alike, since neither pass nor missing would be
+// true for a header that can't affect that response.
+var documentOnlyCheckers = []struct {
+	name          string
+	checker       scanner.Checker
+	headerName    string
+	presentWeak   string
+	presentStrong string
+}{
+	{"COOP", scanner.COOPChecker{}, "Cross-Origin-Opener-Policy", "unsafe-none", "same-origin"},
+	{"COEP", scanner.COEPChecker{}, "Cross-Origin-Embedder-Policy", "unsafe-none", "require-corp"},
+	{"PermissionsPolicy", scanner.PermissionsPolicyChecker{}, "Permissions-Policy", "", "geolocation=()"},
+	{"XSSProtection", scanner.XSSProtectionChecker{}, "X-XSS-Protection", "1", "0"},
+	{"ReferrerPolicy", scanner.ReferrerPolicyChecker{}, "Referrer-Policy", "unsafe-url", "strict-origin-when-cross-origin"},
+}
+
+// TestDocumentOnlyCheckersSilentOnNonDocument pins acceptance criterion 1: a
+// response that declares a non-Document Content-Type (e.g.
+// application/json) gets no Finding at all from any of the five
+// document-only Checkers, regardless of whether their own header is
+// present, weak, or absent.
+func TestDocumentOnlyCheckersSilentOnNonDocument(t *testing.T) {
+	for _, tc := range documentOnlyCheckers {
+		t.Run(tc.name, func(t *testing.T) {
+			headerCases := []struct {
+				name    string
+				headers http.Header
+			}{
+				{"header absent", headersWith("application/json", tc.headerName, "")},
+				{"header present and weak", headersWith("application/json", tc.headerName, tc.presentWeak)},
+				{"header present and strong", headersWith("application/json", tc.headerName, tc.presentStrong)},
+			}
+			for _, hc := range headerCases {
+				if hc.name == "header present and weak" && tc.presentWeak == "" {
+					continue
+				}
+				t.Run(hc.name, func(t *testing.T) {
+					findings := tc.checker.Check(hc.headers, testURL)
+					if len(findings) != 0 {
+						t.Errorf("Check() on a non-Document response = %+v, want no findings", findings)
+					}
+				})
+			}
+		})
+	}
+}
+
+// TestDocumentOnlyCheckersNormalOnMissingOrBlankContentType pins acceptance
+// criterion 2: a response with no Content-Type header, or a blank one, is
+// still treated as a Document, so a missing header still yields a `missing`
+// Finding exactly as before this change.
+func TestDocumentOnlyCheckersNormalOnMissingOrBlankContentType(t *testing.T) {
+	for _, tc := range documentOnlyCheckers {
+		t.Run(tc.name, func(t *testing.T) {
+			contentTypeCases := []struct {
+				name    string
+				headers http.Header
+			}{
+				{"no Content-Type header", http.Header{}},
+				{"blank Content-Type header", http.Header{"Content-Type": {""}}},
+			}
+			for _, ctc := range contentTypeCases {
+				t.Run(ctc.name, func(t *testing.T) {
+					findings := tc.checker.Check(ctc.headers, testURL)
+					if len(findings) != 1 {
+						t.Fatalf("Check() = %+v, want exactly 1 finding", findings)
+					}
+					if findings[0].Status != scanner.StatusMissing {
+						t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusMissing)
+					}
+				})
+			}
+		})
+	}
+}
+
+// TestDocumentOnlyCheckersNormalOnDocumentContentType pins acceptance
+// criterion 3: text/html and application/xhtml+xml — including with
+// trailing parameters and regardless of case — are Documents, so these
+// Checkers behave exactly as they did before this change.
+func TestDocumentOnlyCheckersNormalOnDocumentContentType(t *testing.T) {
+	documentContentTypes := []string{
+		"text/html",
+		"TEXT/HTML",
+		"text/html; charset=utf-8",
+		"application/xhtml+xml",
+		"APPLICATION/XHTML+XML; charset=UTF-8",
+	}
+	for _, tc := range documentOnlyCheckers {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, contentType := range documentContentTypes {
+				t.Run(contentType, func(t *testing.T) {
+					headers := headersWith(contentType, tc.headerName, tc.presentStrong)
+					findings := tc.checker.Check(headers, testURL)
+					if len(findings) != 1 {
+						t.Fatalf("Check() = %+v, want exactly 1 finding", findings)
+					}
+					if findings[0].Status != scanner.StatusPass {
+						t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
+					}
+				})
+			}
+		})
+	}
+}
+
+// TestCSPAndFrameOptionsApplicableOnEveryContentType pins acceptance
+// criterion 4: CSP and X-Frame-Options are unaffected by this change and
+// keep producing a Finding on every response, document or not.
+func TestCSPAndFrameOptionsApplicableOnEveryContentType(t *testing.T) {
+	checkers := []struct {
+		name       string
+		checker    scanner.Checker
+		headerName string
+	}{
+		{"CSP", scanner.CSPChecker{}, "Content-Security-Policy"},
+		{"FrameOptions", scanner.FrameOptionsChecker{}, "X-Frame-Options"},
+	}
+	contentTypes := []struct {
+		name  string
+		value string
+	}{
+		{"non-document", "application/json"},
+		{"document", "text/html"},
+		{"no Content-Type header", ""},
+	}
+	for _, c := range checkers {
+		t.Run(c.name, func(t *testing.T) {
+			for _, ct := range contentTypes {
+				t.Run(ct.name, func(t *testing.T) {
+					headers := http.Header{}
+					if ct.value != "" {
+						headers.Set("Content-Type", ct.value)
+					}
+					findings := c.checker.Check(headers, testURL)
+					if len(findings) != 1 {
+						t.Fatalf("Check() = %+v, want exactly 1 finding", findings)
+					}
+					if findings[0].Status != scanner.StatusMissing {
+						t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusMissing)
+					}
+				})
+			}
+		})
+	}
+}
