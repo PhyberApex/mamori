@@ -1,0 +1,61 @@
+name: mamori
+description: Scan HTTP(S) endpoints for missing or misconfigured security headers and upload findings to GitHub code scanning.
+author: PhyberApex
+
+inputs:
+  targets:
+    description: One target URL per line, parsed the same way mamori parses piped stdin.
+    required: false
+    default: ""
+  config:
+    description: Path to a mamori YAML config file, passed through as -config.
+    required: false
+    default: ""
+  fail-on:
+    description: "Exit non-zero on findings at or above this severity: low, medium, high, or none."
+    required: false
+    default: "none"
+  upload-sarif:
+    description: Upload the scan's SARIF output to GitHub code scanning.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Scan with mamori
+      id: scan
+      shell: bash
+      env:
+        MAMORI_TARGETS: ${{ inputs.targets }}
+        MAMORI_CONFIG_INPUT: ${{ inputs.config }}
+        MAMORI_FAIL_ON_INPUT: ${{ inputs.fail-on }}
+        MAMORI_IMAGE: ghcr.io/phyberapex/mamori:${{ github.action_ref }}
+        MAMORI_SARIF_PATH: ${{ runner.temp }}/mamori.sarif
+      run: |
+        set -uo pipefail
+
+        args=(-fail-on "$MAMORI_FAIL_ON_INPUT" -o sarif)
+        if [[ -n "$MAMORI_CONFIG_INPUT" ]]; then
+          args+=(-config "$MAMORI_CONFIG_INPUT")
+        fi
+
+        exit_code=0
+        printf '%s\n' "$MAMORI_TARGETS" | docker run --rm -i \
+          -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$GITHUB_WORKSPACE" \
+          "$MAMORI_IMAGE" "${args[@]}" >"$MAMORI_SARIF_PATH" || exit_code=$?
+
+        echo "sarif-path=$MAMORI_SARIF_PATH" >>"$GITHUB_OUTPUT"
+        echo "exit-code=$exit_code" >>"$GITHUB_OUTPUT"
+
+    - name: Upload SARIF
+      if: inputs.upload-sarif == 'true'
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ steps.scan.outputs.sarif-path }}
+
+    - name: Enforce fail-on
+      shell: bash
+      env:
+        MAMORI_EXIT_CODE: ${{ steps.scan.outputs.exit-code }}
+      run: exit "$MAMORI_EXIT_CODE"
