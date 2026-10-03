@@ -3,6 +3,7 @@ package scanner_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -926,5 +927,51 @@ func TestScanExposureExtraPathAloneEnablesCategoryEndToEnd(t *testing.T) {
 	}
 	if len(exposed) != 1 || exposed[0].Header != "debug.log" {
 		t.Fatalf("exposed findings = %+v, want exactly one for the extra path \"debug.log\"", exposed)
+	}
+}
+
+// TestScanThrottlesEveryRequestKindToSameHost drives a single target through
+// a client whose Transport is a RateLimitedTransport, with both an
+// OriginProber Checker (CORSChecker) and a PathChecker configured so Scan
+// issues all four request kinds the issue calls out for one target: the
+// plain scan request, the CORS/Origin probe, the exposure baseline probe,
+// and the configured path probe itself. All four land on the same host, so
+// they must all be paced against each other regardless of which kind they
+// are.
+func TestScanThrottlesEveryRequestKindToSameHost(t *testing.T) {
+	var mu sync.Mutex
+	var times []time.Time
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		times = append(times, time.Now())
+		mu.Unlock()
+		// Every path probe (baseline's random path included) must see 404,
+		// or scanExposurePaths treats the target as unreliable and skips the
+		// configured path probe this test depends on.
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	const rate = 20.0 // one request every 50ms
+	client := &http.Client{Transport: scanner.NewRateLimitedTransport(nil, rate, time.Second)}
+
+	checkers := []scanner.Checker{scanner.CORSChecker{}}
+	pathCheckers := []scanner.PathChecker{scanner.NewExposureChecker("secret.txt", scanner.SeverityMedium)}
+	scanner.Scan(t.Context(), client, checkers, nil, pathCheckers, []string{srv.URL}, 1, nil)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(times) != 4 {
+		t.Fatalf("server received %d requests, want 4 (plain + CORS probe + exposure baseline + path probe)", len(times))
+	}
+	sort.Slice(times, func(i, j int) bool { return times[i].Before(times[j]) })
+	// A small tolerance absorbs timer-scheduling jitter around the
+	// boundary; the point under test is sharing across request kinds, not
+	// sub-millisecond precision.
+	want := time.Second/time.Duration(rate) - 5*time.Millisecond
+	for i := 1; i < len(times); i++ {
+		if gap := times[i].Sub(times[i-1]); gap < want {
+			t.Errorf("gap between request %d and %d = %v, want >= %v: every request kind to the same host must share the limit", i-1, i, gap, want)
+		}
 	}
 }

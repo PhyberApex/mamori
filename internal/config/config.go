@@ -5,6 +5,7 @@ package config
 import (
 	"flag"
 	"fmt"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -77,6 +78,14 @@ type Config struct {
 	// HookTimeout bounds PreScanHook/PostScanHook, independent of Timeout
 	// which only governs per-request HTTP timeouts.
 	HookTimeout time.Duration
+	// Rate is the resolved -rate/MAMORI_RATE/rate setting: the maximum
+	// requests per second mamori sends to any single host, keyed by the
+	// host:port of the request actually sent rather than whatever host the
+	// caller originally targeted. The zero value (0) is already the correct
+	// default: unlimited, identical to today's behavior — the scanner only
+	// builds a rate limiter at all when Rate > 0 (see cmd/mamori's client
+	// construction), so an unset Rate adds no new goroutines or delays.
+	Rate float64
 	// BaselinePath is the resolved -baseline/MAMORI_BASELINE/baseline path,
 	// following the default → config → env → flag precedence every other
 	// setting of this shape follows. The zero value ("") is already the
@@ -215,6 +224,19 @@ func validateTimeout(d time.Duration) error {
 	return nil
 }
 
+// validateRate reports whether r satisfies the "zero or positive" rule the
+// config-file, env, and flag layers all enforce for -rate. Unlike
+// -workers/-timeout, 0 itself is valid here — it's the "unlimited" sentinel
+// — so only negative values (and NaN, which strconv.ParseFloat accepts but
+// which is neither negative nor positive and so would otherwise slip past
+// an "r < 0" check) are rejected.
+func validateRate(r float64) error {
+	if math.IsNaN(r) || r < 0 {
+		return fmt.Errorf("%v is not zero or a positive number", r)
+	}
+	return nil
+}
+
 // validateHookTimeout reports whether d satisfies the "positive duration"
 // rule the config-file, env, and flag layers all enforce for -hook-timeout,
 // mirroring validateTimeout since a hook timeout is bound by the same rule.
@@ -259,6 +281,7 @@ func registerFlags(cfg *Config) (*flag.FlagSet, *string) {
 	fs := flag.NewFlagSet("mamori", flag.ContinueOnError)
 	fs.IntVar(&cfg.Workers, "workers", cfg.Workers, "number of concurrent scan workers")
 	fs.DurationVar(&cfg.Timeout, "timeout", cfg.Timeout, "HTTP request timeout (e.g. 5s)")
+	fs.Float64Var(&cfg.Rate, "rate", cfg.Rate, "max requests per second to any single host; 0 means unlimited (fractional values allowed, e.g. 0.5)")
 	fs.Var(&cfg.Output, "o", "output format: terminal, json, or sarif")
 	fs.Var(&cfg.FailOn, "fail-on", "exit non-zero on findings at or above this severity: low, medium, high, or none")
 	fs.BoolVar(&cfg.Version, "v", false, "print version and exit")
@@ -300,6 +323,13 @@ func Resolve(args []string, getenv func(string) string) (Config, []string, error
 			return Config{}, nil, fmt.Errorf("MAMORI_TIMEOUT: %q is not a positive duration (e.g. 5s)", v)
 		}
 		cfg.Timeout = d
+	}
+	if v := getenv("MAMORI_RATE"); v != "" {
+		r, err := strconv.ParseFloat(v, 64)
+		if err != nil || validateRate(r) != nil {
+			return Config{}, nil, fmt.Errorf("MAMORI_RATE: %q is not zero or a positive number", v)
+		}
+		cfg.Rate = r
 	}
 	if v := getenv("MAMORI_OUTPUT"); v != "" {
 		o, err := parseOutput(v)
@@ -349,6 +379,9 @@ func Resolve(args []string, getenv func(string) string) (Config, []string, error
 	}
 	if err := validateTimeout(cfg.Timeout); err != nil {
 		return Config{}, nil, fmt.Errorf("-timeout: %w", err)
+	}
+	if err := validateRate(cfg.Rate); err != nil {
+		return Config{}, nil, fmt.Errorf("-rate: %w", err)
 	}
 	if err := validateHookTimeout(cfg.HookTimeout); err != nil {
 		return Config{}, nil, fmt.Errorf("-hook-timeout: %w", err)

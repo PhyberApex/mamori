@@ -22,6 +22,7 @@ type fileConfig struct {
 	Targets      []string              `yaml:"targets"`
 	Workers      *int                  `yaml:"workers"`
 	Timeout      *string               `yaml:"timeout"`
+	Rate         *float64              `yaml:"rate"`
 	Output       *Output               `yaml:"output"`
 	Suppressions []scanner.Suppression `yaml:"suppressions"`
 	// CheckExposedPaths and ExposedPaths mirror the -check-exposed-paths and
@@ -97,6 +98,12 @@ func applyFileConfig(cfg *Config, fc fileConfig, path string) error {
 			return fmt.Errorf("%s: timeout: %q is not a positive duration (e.g. 5s)", path, *fc.Timeout)
 		}
 		cfg.Timeout = d
+	}
+	if fc.Rate != nil {
+		if err := validateRate(*fc.Rate); err != nil {
+			return fmt.Errorf("%s: rate: %w", path, err)
+		}
+		cfg.Rate = *fc.Rate
 	}
 	if fc.Output != nil {
 		cfg.Output = *fc.Output

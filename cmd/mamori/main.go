@@ -116,6 +116,19 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 	}
 
 	client := &http.Client{Timeout: cfg.Timeout}
+	if cfg.Rate > 0 {
+		// client.Timeout alone can't be reused here: it starts counting
+		// from Do(), before the limiter even runs, so it would wrongly
+		// charge queue-wait time against the request's budget. A
+		// RateLimitedTransport enforces -timeout itself instead, per
+		// individual request, starting only once the limiter releases it —
+		// which is deliberately a *different* timeout scope than
+		// client.Timeout's whole-redirect-chain one (see README's -rate
+		// section), so this can't be collapsed into a single code path
+		// that behaves identically whether or not -rate is set.
+		client.Timeout = 0
+		client.Transport = scanner.NewRateLimitedTransport(nil, cfg.Rate, cfg.Timeout)
+	}
 	pathCheckers := scanner.PathCheckersFor(cfg.CheckExposedPaths, cfg.ExtraExposedPaths)
 	findings := scanner.Scan(ctx, client, scanner.DefaultCheckers(), scanner.DefaultBodyCheckers(), pathCheckers, urls, cfg.Workers, http.Header(cfg.Headers))
 	scanner.ApplySuppressions(findings, cfg.Suppressions, time.Now(), os.Stderr)
