@@ -81,6 +81,7 @@ Full reference for every check mamori performs is available at
 | `-pre-scan-hook` | *(none)* | shell command to run once before scanning starts; aborts the scan if it fails |
 | `-post-scan-hook` | *(none)* | shell command to run once after the scan completes |
 | `-hook-timeout` | `30s` | timeout for `-pre-scan-hook`/`-post-scan-hook` |
+| `-baseline` | *(none)* | path to a previously saved `-o json` scan (NDJSON); matching findings are marked known and exempt from `-fail-on` |
 | `-v`, `-version` | `false` | print the version and exit, performing no scan |
 
 `-o json` emits newline-delimited JSON, one finding per line.
@@ -131,6 +132,25 @@ origin; if the target doesn't answer that with `404`, it's treated as
 unreliable for this check (e.g. a catch-all/soft-404 server) and mamori
 reports a single error for that target instead of probing anything else.
 
+`-baseline` points at a previously saved scan — exactly `-o json`'s own
+output, NDJSON, one `Finding` per line — and marks every current finding with
+an exactly matching `url`, `header`, and `status` as known: `known: true` in
+JSON, a `[KNOWN]` tag in terminal output, and `baselineState: "unchanged"` in
+SARIF (every other non-pass SARIF result gets `"new"` instead, but only once
+a baseline was actually supplied). `severity` and `message` are never
+compared, so a finding that is otherwise identical but was reworded or had
+its severity tuned is still known, while one whose `status` changed (e.g.
+`missing` → `weak`) is not. A known finding is excluded from `-fail-on`
+gating the same way a suppressed one is — independently: a finding can be
+known, suppressed, both, or neither, and every applicable tag is rendered. A
+baseline entry with no match in the current scan produces no output of any
+kind; there's no flag to generate a baseline file, since `-o json > file.json`
+already is one. With no `-baseline` supplied, output is unchanged in every
+format: no `known` field, no `[KNOWN]` tag, no `baselineState` field anywhere.
+A `-baseline` file that doesn't exist, can't be read, or doesn't parse as
+NDJSON `Finding` records fails config loading before any scanning starts, the
+same way an invalid `-timeout` does.
+
 `-pre-scan-hook` and `-post-scan-hook` let a scan trigger external side
 effects — for example disabling a WAF before scanning and re-enabling it
 after. Each runs once per whole invocation (not once per target), via `sh
@@ -169,6 +189,7 @@ precedence.
 | `MAMORI_PRE_SCAN_HOOK` | `-pre-scan-hook` |
 | `MAMORI_POST_SCAN_HOOK` | `-post-scan-hook` |
 | `MAMORI_HOOK_TIMEOUT` | `-hook-timeout` |
+| `MAMORI_BASELINE` | `-baseline` |
 
 `-exposed-path` has no environment variable equivalent, the same as `-H`.
 
@@ -196,6 +217,7 @@ suppressions:
 preScanHook: ./disable-waf.sh
 postScanHook: ./enable-waf.sh
 hookTimeout: 30s
+baseline: ./previous-scan.json
 ```
 
 Select a file explicitly with `-config <path>` or `MAMORI_CONFIG=<path>`. If

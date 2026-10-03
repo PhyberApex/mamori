@@ -2,6 +2,8 @@ package config_test
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -9,6 +11,17 @@ import (
 	"github.com/PhyberApex/mamori/internal/config"
 	"github.com/PhyberApex/mamori/internal/scanner"
 )
+
+// writeBaselineFile writes a minimal valid NDJSON baseline file for -baseline
+// tests, mirroring exactly the -o json output shape.
+func writeBaselineFile(t *testing.T, contents string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "baseline.json")
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatalf("failed to write baseline file: %v", err)
+	}
+	return path
+}
 
 func noEnv(string) string { return "" }
 
@@ -342,5 +355,86 @@ func TestResolveFailOnNoneFlagOverridesEnv(t *testing.T) {
 	}
 	if cfg.FailOn != "" {
 		t.Errorf("FailOn = %q, want zero value (\"none\") from -fail-on none", cfg.FailOn)
+	}
+}
+
+func TestResolveDefaultsToNoBaseline(t *testing.T) {
+	cfg, _, err := config.Resolve(nil, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.BaselinePath != "" {
+		t.Errorf("BaselinePath = %q, want empty default", cfg.BaselinePath)
+	}
+	if len(cfg.Baseline) != 0 {
+		t.Errorf("Baseline = %v, want empty by default", cfg.Baseline)
+	}
+}
+
+func TestResolveBaselineFlagLoadsAndParsesFile(t *testing.T) {
+	path := writeBaselineFile(t, `{"url":"https://a.example","header":"X-Frame-Options","status":"missing","severity":"medium"}`+"\n")
+
+	cfg, _, err := config.Resolve([]string{"-baseline", path}, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.BaselinePath != path {
+		t.Errorf("BaselinePath = %q, want %q", cfg.BaselinePath, path)
+	}
+	if len(cfg.Baseline) != 1 || cfg.Baseline[0].Header != "X-Frame-Options" {
+		t.Errorf("Baseline = %+v, want the single parsed finding", cfg.Baseline)
+	}
+}
+
+func TestResolveBaselineEnvVar(t *testing.T) {
+	path := writeBaselineFile(t, `{"url":"https://a.example","header":"X-Frame-Options","status":"missing"}`+"\n")
+
+	cfg, _, err := config.Resolve(nil, envWith(map[string]string{"MAMORI_BASELINE": path}))
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.BaselinePath != path {
+		t.Errorf("BaselinePath = %q, want %q from MAMORI_BASELINE", cfg.BaselinePath, path)
+	}
+	if len(cfg.Baseline) != 1 {
+		t.Errorf("Baseline = %+v, want one parsed finding", cfg.Baseline)
+	}
+}
+
+func TestResolveBaselineFlagOverridesEnvVar(t *testing.T) {
+	flagPath := writeBaselineFile(t, `{"url":"https://flag.example","header":"X-Frame-Options","status":"missing"}`+"\n")
+	envPath := writeBaselineFile(t, `{"url":"https://env.example","header":"X-Frame-Options","status":"missing"}`+"\n")
+
+	cfg, _, err := config.Resolve(
+		[]string{"-baseline", flagPath},
+		envWith(map[string]string{"MAMORI_BASELINE": envPath}),
+	)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.BaselinePath != flagPath {
+		t.Errorf("BaselinePath = %q, want %q from -baseline flag overriding env", cfg.BaselinePath, flagPath)
+	}
+	if len(cfg.Baseline) != 1 || cfg.Baseline[0].URL != "https://flag.example" {
+		t.Errorf("Baseline = %+v, want the flag file's finding", cfg.Baseline)
+	}
+}
+
+func TestResolveRejectsNonexistentBaselineFlag(t *testing.T) {
+	if _, _, err := config.Resolve([]string{"-baseline", filepath.Join(t.TempDir(), "missing.json")}, noEnv); err == nil {
+		t.Error("Resolve() with -baseline pointed at a nonexistent file returned nil error, want error")
+	}
+}
+
+func TestResolveRejectsMalformedBaselineFlag(t *testing.T) {
+	path := writeBaselineFile(t, "not valid ndjson\n")
+	if _, _, err := config.Resolve([]string{"-baseline", path}, noEnv); err == nil {
+		t.Error("Resolve() with a malformed -baseline file returned nil error, want error")
+	}
+}
+
+func TestResolveRejectsNonexistentBaselineEnvVar(t *testing.T) {
+	if _, _, err := config.Resolve(nil, envWith(map[string]string{"MAMORI_BASELINE": filepath.Join(t.TempDir(), "missing.json")})); err == nil {
+		t.Error("Resolve() with MAMORI_BASELINE pointed at a nonexistent file returned nil error, want error")
 	}
 }

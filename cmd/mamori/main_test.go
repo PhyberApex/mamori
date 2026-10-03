@@ -240,6 +240,141 @@ func TestRunSuppressedFindingDoesNotTripFailOnButStaysInOutput(t *testing.T) {
 	}
 }
 
+func TestRunBaselineMarksMatchingFindingsKnownAcrossAllFormats(t *testing.T) {
+	url := headerServer(t, nil) // every header missing, including high severity
+	configPath := writeTransportSuppressionConfig(t)
+
+	var first bytes.Buffer
+	if err := run([]string{"-config", configPath, "-o", "json", url}, nil, &first); err != nil {
+		t.Fatalf("first run() returned error: %v", err)
+	}
+	baselinePath := filepath.Join(t.TempDir(), "baseline.json")
+	if err := os.WriteFile(baselinePath, first.Bytes(), 0o600); err != nil {
+		t.Fatalf("writing baseline file: %v", err)
+	}
+
+	// JSON: every finding is known.
+	var jsonOut bytes.Buffer
+	if err := run([]string{"-config", configPath, "-baseline", baselinePath, "-o", "json", url}, nil, &jsonOut); err != nil {
+		t.Fatalf("second run() (json) returned error: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(jsonOut.String(), "\n"), "\n")
+	if len(lines) == 0 || lines[0] == "" {
+		t.Fatalf("second run() wrote no findings\noutput:\n%s", jsonOut.String())
+	}
+	for _, line := range lines {
+		var f map[string]any
+		if err := json.Unmarshal([]byte(line), &f); err != nil {
+			t.Fatalf("line is not valid JSON: %v\nline: %s", err, line)
+		}
+		if f["known"] != true {
+			t.Errorf("finding %v known = %v, want true: identical rescan against its own baseline", f, f["known"])
+		}
+	}
+
+	// Terminal: every finding line carries [KNOWN].
+	var termOut bytes.Buffer
+	if err := run([]string{"-config", configPath, "-baseline", baselinePath, url}, nil, &termOut); err != nil {
+		t.Fatalf("second run() (terminal) returned error: %v", err)
+	}
+	if !strings.Contains(termOut.String(), "[KNOWN]") {
+		t.Errorf("terminal output missing [KNOWN]\noutput:\n%s", termOut.String())
+	}
+
+	// SARIF: every result is "unchanged".
+	var sarifOut bytes.Buffer
+	if err := run([]string{"-config", configPath, "-baseline", baselinePath, "-o", "sarif", url}, nil, &sarifOut); err != nil {
+		t.Fatalf("second run() (sarif) returned error: %v", err)
+	}
+	var doc struct {
+		Runs []struct {
+			Results []struct {
+				BaselineState string `json:"baselineState"`
+			} `json:"results"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal(sarifOut.Bytes(), &doc); err != nil {
+		t.Fatalf("sarif output is not valid JSON: %v\noutput:\n%s", err, sarifOut.String())
+	}
+	if len(doc.Runs) != 1 || len(doc.Runs[0].Results) == 0 {
+		t.Fatalf("got no SARIF results\noutput:\n%s", sarifOut.String())
+	}
+	for _, r := range doc.Runs[0].Results {
+		if r.BaselineState != "unchanged" {
+			t.Errorf("result baselineState = %q, want %q", r.BaselineState, "unchanged")
+		}
+	}
+}
+
+func TestRunKnownFindingDoesNotTripFailOnHigh(t *testing.T) {
+	url := headerServer(t, nil) // every header missing, including high severity
+	configPath := writeTransportSuppressionConfig(t)
+
+	var first bytes.Buffer
+	if err := run([]string{"-config", configPath, "-o", "json", url}, nil, &first); err != nil {
+		t.Fatalf("first run() returned error: %v", err)
+	}
+	baselinePath := filepath.Join(t.TempDir(), "baseline.json")
+	if err := os.WriteFile(baselinePath, first.Bytes(), 0o600); err != nil {
+		t.Fatalf("writing baseline file: %v", err)
+	}
+
+	err := run([]string{"-config", configPath, "-baseline", baselinePath, "-fail-on", "high", url}, nil, io.Discard)
+	if err != nil {
+		t.Errorf("run() with every finding known returned %v, want nil: a known finding must not trip -fail-on", err)
+	}
+}
+
+func TestRunBaselineEntryWithNoMatchIsNotKnown(t *testing.T) {
+	configPath := writeTransportSuppressionConfig(t)
+	url := headerServer(t, strongHeaders()) // nothing missing this run
+
+	baselinePath := filepath.Join(t.TempDir(), "baseline.json")
+	stale := `{"url":"https://gone.example","header":"Content-Security-Policy","status":"missing","severity":"high"}` + "\n"
+	if err := os.WriteFile(baselinePath, []byte(stale), 0o600); err != nil {
+		t.Fatalf("writing baseline file: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := run([]string{"-config", configPath, "-baseline", baselinePath, "-o", "json", url}, nil, &buf); err != nil {
+		t.Fatalf("run() returned error: %v", err)
+	}
+	if strings.Contains(buf.String(), "gone.example") {
+		t.Errorf("output mentions the unmatched baseline entry, want it to produce no output at all\noutput:\n%s", buf.String())
+	}
+}
+
+func TestRunRejectsNonexistentBaselineFile(t *testing.T) {
+	url := headerServer(t, strongHeaders())
+	err := run([]string{"-baseline", filepath.Join(t.TempDir(), "missing.json"), url}, nil, io.Discard)
+	if err == nil {
+		t.Fatal("run() with -baseline pointed at a nonexistent file returned nil error, want error")
+	}
+	if errors.Is(err, errFailThreshold) {
+		t.Error("run() with a bad -baseline returned errFailThreshold, want a config-loading error")
+	}
+}
+
+func TestRunWithNoBaselineOutputIsUnchanged(t *testing.T) {
+	url := headerServer(t, nil)
+
+	var buf bytes.Buffer
+	if err := run([]string{"-o", "json", url}, nil, &buf); err != nil {
+		t.Fatalf("run() returned error: %v", err)
+	}
+	if strings.Contains(buf.String(), "known") {
+		t.Errorf("output contains %q, want it entirely absent with no -baseline supplied\noutput:\n%s", "known", buf.String())
+	}
+
+	var sarifOut bytes.Buffer
+	if err := run([]string{"-o", "sarif", url}, nil, &sarifOut); err != nil {
+		t.Fatalf("run() (sarif) returned error: %v", err)
+	}
+	if strings.Contains(sarifOut.String(), "baselineState") {
+		t.Errorf("sarif output contains baselineState, want it absent with no -baseline supplied\noutput:\n%s", sarifOut.String())
+	}
+}
+
 func TestRunTerminalOutputToNonTerminalWriterOmitsAnsiEscapes(t *testing.T) {
 	url := headerServer(t, nil) // every header missing, including high severity
 

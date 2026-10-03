@@ -449,6 +449,73 @@ func TestTerminalReporterShowsReasonNextToSuppressedTag(t *testing.T) {
 	}
 }
 
+func TestTerminalReporterMarksKnownFindings(t *testing.T) {
+	findings := []scanner.Finding{
+		{
+			URL:      "https://a.example",
+			Header:   "Content-Security-Policy",
+			Status:   scanner.StatusMissing,
+			Severity: scanner.SeverityHigh,
+			Known:    true,
+		},
+		{
+			URL:      "https://a.example",
+			Header:   "X-Frame-Options",
+			Status:   scanner.StatusMissing,
+			Severity: scanner.SeverityMedium,
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.TerminalReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	var knownLine, xfoLine string
+	for _, line := range strings.Split(buf.String(), "\n") {
+		if strings.Contains(line, "Content-Security-Policy") {
+			knownLine = line
+		}
+		if strings.Contains(line, "X-Frame-Options") {
+			xfoLine = line
+		}
+	}
+	if !strings.Contains(knownLine, "[KNOWN]") {
+		t.Errorf("known finding's line does not mention [KNOWN]\nline: %q", knownLine)
+	}
+	if strings.Contains(xfoLine, "[KNOWN]") {
+		t.Errorf("non-known finding's line mentions [KNOWN]\nline: %q", xfoLine)
+	}
+}
+
+func TestTerminalReporterShowsBothKnownAndSuppressedTags(t *testing.T) {
+	findings := []scanner.Finding{
+		{
+			URL:        "https://a.example",
+			Header:     "Content-Security-Policy",
+			Status:     scanner.StatusMissing,
+			Severity:   scanner.SeverityHigh,
+			Known:      true,
+			Suppressed: true,
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.TerminalReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	var line string
+	for _, l := range strings.Split(buf.String(), "\n") {
+		if strings.Contains(l, "Content-Security-Policy") {
+			line = l
+		}
+	}
+	if !strings.Contains(line, "[KNOWN]") || !strings.Contains(line, "[SUPPRESSED]") {
+		t.Errorf("line = %q, want both [KNOWN] and [SUPPRESSED]", line)
+	}
+}
+
 func TestJSONReporterEmitsOneFindingPerLine(t *testing.T) {
 	findings := []scanner.Finding{
 		{
@@ -690,5 +757,49 @@ func TestJSONReporterCarriesReasonOnSuppressedFindingAndOmitsItOtherwise(t *test
 	}
 	if _, present := withoutReason["suppressedReason"]; present {
 		t.Errorf("finding with no configured reason has a %q key, want it omitted", "suppressedReason")
+	}
+}
+
+func TestJSONReporterMarksKnownFindingAndOmitsItOtherwise(t *testing.T) {
+	findings := []scanner.Finding{
+		{
+			URL:      "https://a.example",
+			Header:   "Content-Security-Policy",
+			Status:   scanner.StatusMissing,
+			Severity: scanner.SeverityHigh,
+			Known:    true,
+		},
+		{
+			URL:      "https://a.example",
+			Header:   "X-Frame-Options",
+			Status:   scanner.StatusMissing,
+			Severity: scanner.SeverityMedium,
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.JSONReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("got %d lines, want one per finding (2)\noutput:\n%s", len(lines), buf.String())
+	}
+
+	var known map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &known); err != nil {
+		t.Fatalf("line 1 is not valid JSON: %v\nline: %s", err, lines[0])
+	}
+	if known["known"] != true {
+		t.Errorf("known finding known = %v, want true", known["known"])
+	}
+
+	var unknown map[string]any
+	if err := json.Unmarshal([]byte(lines[1]), &unknown); err != nil {
+		t.Fatalf("line 2 is not valid JSON: %v\nline: %s", err, lines[1])
+	}
+	if _, present := unknown["known"]; present {
+		t.Errorf("non-known finding has a %q key, want it omitted", "known")
 	}
 }

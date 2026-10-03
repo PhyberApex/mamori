@@ -126,6 +126,9 @@ func (t TerminalReporter) Report(findings []Finding, w io.Writer) error {
 					line += " → " + f.Reference
 				}
 			}
+			if f.Known {
+				line += " " + colorize(t.Color, ansiDim, "[KNOWN]")
+			}
 			if f.Suppressed {
 				tag := "[SUPPRESSED]"
 				if f.SuppressedReason != "" {

@@ -420,3 +420,58 @@ func TestSarifReporterEnvelopeAndLocation(t *testing.T) {
 		t.Errorf("result location URI = %q, want %q", loc, "https://a.example")
 	}
 }
+
+func sarifBaselineStates(t *testing.T, buf *bytes.Buffer) map[string]string {
+	t.Helper()
+	var doc struct {
+		Runs []struct {
+			Results []struct {
+				RuleID        string `json:"ruleId"`
+				BaselineState string `json:"baselineState"`
+			} `json:"results"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &doc); err != nil {
+		t.Fatalf("output is not valid JSON: %v\noutput:\n%s", err, buf.String())
+	}
+	byRule := map[string]string{}
+	for _, r := range doc.Runs[0].Results {
+		byRule[r.RuleID] = r.BaselineState
+	}
+	return byRule
+}
+
+func TestSarifReporterMarksKnownResultAsUnchangedAndOthersAsNewWhenBaselineSupplied(t *testing.T) {
+	findings := []scanner.Finding{
+		{URL: "https://a.example", Header: "Content-Security-Policy", Status: scanner.StatusMissing, Severity: scanner.SeverityHigh, Known: true},
+		{URL: "https://a.example", Header: "X-Frame-Options", Status: scanner.StatusMissing, Severity: scanner.SeverityMedium},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.SarifReporter{BaselineSupplied: true}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	byRule := sarifBaselineStates(t, &buf)
+	if byRule["Content-Security-Policy"] != "unchanged" {
+		t.Errorf("known result baselineState = %q, want %q", byRule["Content-Security-Policy"], "unchanged")
+	}
+	if byRule["X-Frame-Options"] != "new" {
+		t.Errorf("non-known result baselineState = %q, want %q", byRule["X-Frame-Options"], "new")
+	}
+}
+
+func TestSarifReporterOmitsBaselineStateWhenNoBaselineSupplied(t *testing.T) {
+	findings := []scanner.Finding{
+		{URL: "https://a.example", Header: "X-Frame-Options", Status: scanner.StatusMissing, Severity: scanner.SeverityMedium},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.SarifReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	if strings.Contains(buf.String(), "baselineState") {
+		t.Errorf("output contains baselineState, want it entirely absent when no baseline was supplied\noutput:\n%s", buf.String())
+	}
+}
