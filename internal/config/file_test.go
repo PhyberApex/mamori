@@ -403,6 +403,46 @@ func TestResolveEnvVarOverridesConfigFileHook(t *testing.T) {
 	}
 }
 
+func TestResolveConfigFileLoadsBaseline(t *testing.T) {
+	baselinePath := writeBaselineFile(t, `{"url":"https://a.example","header":"X-Frame-Options","status":"missing"}`+"\n")
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", "baseline: "+baselinePath+"\n")
+
+	cfg, _, err := config.Resolve([]string{"-config", path}, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.BaselinePath != baselinePath {
+		t.Errorf("BaselinePath = %q, want %q from config file", cfg.BaselinePath, baselinePath)
+	}
+	if len(cfg.Baseline) != 1 {
+		t.Errorf("Baseline = %+v, want one parsed finding", cfg.Baseline)
+	}
+}
+
+func TestResolveConfigFileRejectsNonexistentBaseline(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", "baseline: /nonexistent/baseline.json\n")
+	if _, _, err := config.Resolve([]string{"-config", path}, noEnv); err == nil {
+		t.Error("Resolve() with a config-file baseline pointed at a nonexistent file returned nil error, want error")
+	}
+}
+
+func TestResolveEnvVarOverridesConfigFileBaseline(t *testing.T) {
+	filePath := writeBaselineFile(t, `{"url":"https://file.example","header":"X-Frame-Options","status":"missing"}`+"\n")
+	envPath := writeBaselineFile(t, `{"url":"https://env.example","header":"X-Frame-Options","status":"missing"}`+"\n")
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", "baseline: "+filePath+"\n")
+
+	cfg, _, err := config.Resolve(
+		[]string{"-config", path},
+		envWith(map[string]string{"MAMORI_BASELINE": envPath}),
+	)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.BaselinePath != envPath {
+		t.Errorf("BaselinePath = %q, want %q from MAMORI_BASELINE overriding config file", cfg.BaselinePath, envPath)
+	}
+}
+
 func TestResolveWithNoConfigFilePresentIsUnchanged(t *testing.T) {
 	t.Chdir(t.TempDir())
 

@@ -46,7 +46,13 @@ type sarifResult struct {
 	Message      sarifText          `json:"message"`
 	Locations    []sarifLocation    `json:"locations"`
 	Suppressions []sarifSuppression `json:"suppressions,omitempty"`
-	Properties   *sarifProperties   `json:"properties,omitempty"`
+	// BaselineState is SARIF's own baseline-comparison field (§3.28.14):
+	// "unchanged" for a Known finding, "new" for every other non-pass
+	// result. Left empty (and so omitted) entirely when no -baseline was
+	// supplied this run, the same way Suppressions is only ever populated
+	// when something actually suppressed — not set to "new" by default.
+	BaselineState string           `json:"baselineState,omitempty"`
+	Properties    *sarifProperties `json:"properties,omitempty"`
 }
 
 // sarifProperties carries Finding.FinalURL (see the Final URL glossary
@@ -95,9 +101,17 @@ type sarifArtifactLocation struct {
 // GitHub code scanning and similar CI tooling expect. Only non-pass findings
 // become results — a clean header carries no actionable location for a code
 // scanning UI to annotate.
-type SarifReporter struct{}
+type SarifReporter struct {
+	// BaselineSupplied is set when -baseline named a file this run, which
+	// engages the baselineState field on every result (see sarifResult).
+	// It is distinct from any individual Finding.Known: a baseline with no
+	// match still supplies "new" for that result, whereas no baseline at
+	// all omits the field entirely — a Finding.Known of false alone can't
+	// tell those two cases apart.
+	BaselineSupplied bool
+}
 
-func (SarifReporter) Report(findings []Finding, w io.Writer) error {
+func (r SarifReporter) Report(findings []Finding, w io.Writer) error {
 	driver := sarifDriver{
 		Name:           "mamori",
 		InformationURI: "https://github.com/PhyberApex/mamori",
@@ -113,6 +127,13 @@ func (SarifReporter) Report(findings []Finding, w io.Writer) error {
 		if !seenRules[rule.ID] {
 			seenRules[rule.ID] = true
 			driver.Rules = append(driver.Rules, rule)
+		}
+		if r.BaselineSupplied {
+			if f.Known {
+				result.BaselineState = "unchanged"
+			} else {
+				result.BaselineState = "new"
+			}
 		}
 		results = append(results, result)
 	}

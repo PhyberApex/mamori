@@ -117,6 +117,15 @@ type Finding struct {
 	// as Suppressed itself: no reason configured means no field in the
 	// common case.
 	SuppressedReason string `json:"suppressedReason,omitempty"`
+	// Known records whether a -baseline Finding with an exactly equal
+	// URL, Header, and Status exists (see ApplyBaseline) — Severity and
+	// Message are never compared, so a reworded message or a changed
+	// severity for an otherwise-identical Finding is still Known. It is
+	// orthogonal to Suppressed: a Finding can be Known, Suppressed, both,
+	// or neither, and every applicable tag/field is rendered. omitempty
+	// keeps it out of JSON entirely for the common case of no -baseline
+	// supplied.
+	Known bool `json:"known,omitempty"`
 }
 
 // Fails reports whether f should trip a -fail-on gate at the given
@@ -129,12 +138,14 @@ type Finding struct {
 // Otherwise a StatusError always fails, regardless of threshold, since a
 // scan that couldn't complete shouldn't silently report success; a
 // Missing/Weak/Exposed/Insecure finding fails once its severity reaches
-// threshold; a Pass never fails.
+// threshold; a Pass never fails. A Known finding never fails either,
+// mirroring the Suppressed short-circuit, since the two are independent
+// exemptions from the same gate.
 func (f Finding) Fails(threshold Severity) bool {
 	if threshold == "" {
 		return false
 	}
-	if f.Suppressed {
+	if f.Suppressed || f.Known {
 		return false
 	}
 	if f.Status == StatusError {

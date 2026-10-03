@@ -32,6 +32,7 @@ type fileConfig struct {
 	PreScanHook       *string  `yaml:"preScanHook"`
 	PostScanHook      *string  `yaml:"postScanHook"`
 	HookTimeout       *string  `yaml:"hookTimeout"`
+	Baseline          *string  `yaml:"baseline"`
 }
 
 // resolveConfigPath decides which config file, if any, supplies the config
@@ -112,6 +113,9 @@ func applyFileConfig(cfg *Config, fc fileConfig, path string) error {
 			return fmt.Errorf("%s: hookTimeout: %q is not a positive duration (e.g. 30s)", path, *fc.HookTimeout)
 		}
 		cfg.HookTimeout = d
+	}
+	if fc.Baseline != nil {
+		cfg.BaselinePath = *fc.Baseline
 	}
 	if err := validateSuppressions(fc.Suppressions); err != nil {
 		return fmt.Errorf("%s: %w", path, err)

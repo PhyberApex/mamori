@@ -77,6 +77,20 @@ type Config struct {
 	// HookTimeout bounds PreScanHook/PostScanHook, independent of Timeout
 	// which only governs per-request HTTP timeouts.
 	HookTimeout time.Duration
+	// BaselinePath is the resolved -baseline/MAMORI_BASELINE/baseline path,
+	// following the default → config → env → flag precedence every other
+	// setting of this shape follows. The zero value ("") is already the
+	// correct default: no baseline, nothing is ever Known. It stays set
+	// (rather than being cleared once loaded) so callers can tell "a
+	// baseline was supplied" apart from "a baseline matched nothing" —
+	// Baseline alone can't distinguish those, since an empty baseline file
+	// also decodes to a nil/empty slice.
+	BaselinePath string
+	// Baseline holds the NDJSON Findings loaded from BaselinePath once at
+	// config-load time (see scanner.LoadBaseline), so a bad baseline file
+	// fails config loading rather than scanning. The zero value (nil) is
+	// already the correct default: no baseline, nothing is ever Known.
+	Baseline []scanner.Finding
 }
 
 // Headers is http.Header under the flag package's Value contract: a defined
@@ -255,6 +269,7 @@ func registerFlags(cfg *Config) (*flag.FlagSet, *string) {
 	fs.StringVar(&cfg.PreScanHook, "pre-scan-hook", cfg.PreScanHook, "shell command to run once before scanning starts; aborts the scan if it fails")
 	fs.StringVar(&cfg.PostScanHook, "post-scan-hook", cfg.PostScanHook, "shell command to run once after the scan completes")
 	fs.DurationVar(&cfg.HookTimeout, "hook-timeout", cfg.HookTimeout, "timeout for -pre-scan-hook/-post-scan-hook (e.g. 30s)")
+	fs.StringVar(&cfg.BaselinePath, "baseline", cfg.BaselinePath, "path to a previously saved -o json scan (NDJSON); findings matching one by URL, header, and status are marked known and exempt from -fail-on")
 	var configPath string
 	fs.StringVar(&configPath, "config", "", "path to YAML config file (env MAMORI_CONFIG; default: .mamori.yaml in the working directory if present)")
 	return fs, &configPath
@@ -318,6 +333,9 @@ func Resolve(args []string, getenv func(string) string) (Config, []string, error
 		}
 		cfg.HookTimeout = d
 	}
+	if v := getenv("MAMORI_BASELINE"); v != "" {
+		cfg.BaselinePath = v
+	}
 
 	fs, _ := registerFlags(&cfg)
 	if err := fs.Parse(args); err != nil {
@@ -334,6 +352,13 @@ func Resolve(args []string, getenv func(string) string) (Config, []string, error
 	}
 	if err := validateHookTimeout(cfg.HookTimeout); err != nil {
 		return Config{}, nil, fmt.Errorf("-hook-timeout: %w", err)
+	}
+	if cfg.BaselinePath != "" {
+		baseline, err := scanner.LoadBaseline(cfg.BaselinePath)
+		if err != nil {
+			return Config{}, nil, fmt.Errorf("-baseline: %w", err)
+		}
+		cfg.Baseline = baseline
 	}
 	targets := append(append([]string{}, fileTargets...), fs.Args()...)
 	return cfg, targets, nil

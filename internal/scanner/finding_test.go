@@ -178,6 +178,24 @@ func TestFindingFails(t *testing.T) {
 			threshold: scanner.SeverityLow,
 			want:      false,
 		},
+		{
+			name:      "known high-severity finding never fails",
+			finding:   scanner.Finding{Status: scanner.StatusMissing, Severity: scanner.SeverityHigh, Known: true},
+			threshold: scanner.SeverityLow,
+			want:      false,
+		},
+		{
+			name:      "known error finding never fails",
+			finding:   scanner.Finding{Status: scanner.StatusError, Severity: scanner.SeverityHigh, Known: true},
+			threshold: scanner.SeverityLow,
+			want:      false,
+		},
+		{
+			name:      "known and suppressed finding never fails",
+			finding:   scanner.Finding{Status: scanner.StatusMissing, Severity: scanner.SeverityHigh, Known: true, Suppressed: true},
+			threshold: scanner.SeverityLow,
+			want:      false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

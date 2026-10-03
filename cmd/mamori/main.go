@@ -119,6 +119,7 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 	pathCheckers := scanner.PathCheckersFor(cfg.CheckExposedPaths, cfg.ExtraExposedPaths)
 	findings := scanner.Scan(ctx, client, scanner.DefaultCheckers(), scanner.DefaultBodyCheckers(), pathCheckers, urls, cfg.Workers, http.Header(cfg.Headers))
 	scanner.ApplySuppressions(findings, cfg.Suppressions, time.Now(), os.Stderr)
+	scanner.ApplyBaseline(findings, cfg.Baseline)
 
 	// The post-scan hook's job (e.g. re-enabling a WAF the pre-scan hook
 	// disabled) must run whether or not the scan produced findings, so its
@@ -126,7 +127,7 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 	// short-circuiting here.
 	_, hookErr := runHook(ctx, cfg.PostScanHook, hookPhasePost, urls, cfg.HookTimeout, os.Stderr)
 
-	if err := reporterFor(cfg.Output, out).Report(findings, out); err != nil {
+	if err := reporterFor(cfg, out).Report(findings, out); err != nil {
 		return err
 	}
 	// hookErr takes priority over -fail-on when both trip: the report above
@@ -146,13 +147,16 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 
 // reporterFor returns the Reporter interface, not a concrete type, so run
 // stays indifferent to which implementation it drives — the Go way of
-// selecting a strategy is a small interface plus a switch at the edge.
-func reporterFor(o config.Output, out io.Writer) scanner.Reporter {
-	switch o {
+// selecting a strategy is a small interface plus a switch at the edge. It
+// takes the whole Config, not just cfg.Output, because SarifReporter also
+// needs to know whether a -baseline was supplied (see
+// SarifReporter.BaselineSupplied).
+func reporterFor(cfg config.Config, out io.Writer) scanner.Reporter {
+	switch cfg.Output {
 	case config.OutputJSON:
 		return scanner.JSONReporter{}
 	case config.OutputSarif:
-		return scanner.SarifReporter{}
+		return scanner.SarifReporter{BaselineSupplied: cfg.BaselinePath != ""}
 	default:
 		return scanner.TerminalReporter{Color: colorEnabled(out)}
 	}
