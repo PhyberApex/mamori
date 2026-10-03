@@ -10,8 +10,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // strongHeaders returns headers that pass every default checker, so a
@@ -432,6 +435,60 @@ func TestRunCheckExposedPathsFlagFindsExposedPath(t *testing.T) {
 	}
 	if !sawExposed {
 		t.Errorf("run() with -check-exposed-paths did not report .env as exposed\noutput:\n%s", buf.String())
+	}
+}
+
+func TestRunRateFlagThrottlesRequestsToSameHost(t *testing.T) {
+	var mu sync.Mutex
+	var times []time.Time
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		times = append(times, time.Now())
+		mu.Unlock()
+	}))
+	t.Cleanup(srv.Close)
+
+	// Two distinct targets that both resolve to the same host:port, run
+	// with enough workers to attempt them concurrently: the per-host limit
+	// has to serialize them regardless.
+	const rate = 10.0 // one request every 100ms
+	err := run([]string{"-rate", fmt.Sprintf("%v", rate), "-workers", "2", srv.URL + "/a", srv.URL + "/b"}, nil, io.Discard)
+	if err != nil {
+		t.Fatalf("run() returned error: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	// Every target issues both a plain scan request and a CORS/Origin probe
+	// (DefaultCheckers includes CORSChecker), so 2 targets to the same host
+	// produce 4 requests sharing the same per-host limit.
+	if len(times) != 4 {
+		t.Fatalf("server received %d requests, want 4 (2 targets x plain + CORS probe)", len(times))
+	}
+	sort.Slice(times, func(i, j int) bool { return times[i].Before(times[j]) })
+	want := time.Second / time.Duration(rate)
+	if span := times[len(times)-1].Sub(times[0]); span < 3*want {
+		t.Errorf("span across 4 requests to the shared host = %v, want >= %v (3 intervals across 4 requests)", span, 3*want)
+	}
+}
+
+func TestRunDefaultRateUnlimitedDoesNotDelayRequestsToSameHost(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	t.Cleanup(srv.Close)
+
+	start := time.Now()
+	targets := []string{srv.URL + "/a", srv.URL + "/b", srv.URL + "/c", srv.URL + "/d", srv.URL + "/e"}
+	if err := run(targets, nil, io.Discard); err != nil {
+		t.Fatalf("run() returned error: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+		t.Errorf("run() with -rate unset took %v for %d targets to the same host, want unthrottled (fast)", elapsed, len(targets))
+	}
+}
+
+func TestRunRejectsNegativeRateFlag(t *testing.T) {
+	if err := run([]string{"-rate", "-1", "https://a.example"}, nil, io.Discard); err == nil {
+		t.Error("run() with -rate -1 returned nil error, want error")
 	}
 }
 

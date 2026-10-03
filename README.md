@@ -72,6 +72,7 @@ Full reference for every check mamori performs is available at
 |---|---|---|
 | `-workers` | `10` | number of concurrent scan workers |
 | `-timeout` | `10s` | HTTP request timeout (e.g. `5s`) |
+| `-rate` | `0` | max requests per second to any single host; `0` means unlimited (fractional values allowed, e.g. `0.5`) |
 | `-o` | `terminal` | output format: `terminal`, `json`, or `sarif` |
 | `-fail-on` | `none` | exit non-zero on findings at or above this severity: `low`, `medium`, `high`, or `none` |
 | `-H` | *(none)* | custom request header `'Key: Value'`, e.g. `-H 'Authorization: Bearer xyz'` (repeatable) |
@@ -112,6 +113,25 @@ Because the transport itself is judged by default (see above), any
 plain HTTP (e.g. a local dev server) opts out with an ordinary Suppression,
 `{header: "Transport"}`, same as any other accepted-risk finding — see
 Config file below.
+
+`-rate` caps how fast mamori sends requests to any single host (by the
+`host:port` the request actually ends up going to, after following any
+redirect — not necessarily the host in the URL you typed), evenly spacing
+consecutive requests at least `1/-rate` seconds apart with no burst
+allowance: the first request to a host is never delayed, and the limit is
+shared across the whole scan, not reset per target, since multiple targets
+can resolve to the same host. It covers every request mamori sends on a
+target's behalf — the plain scan request, the CORS/Origin probe, and every
+`-check-exposed-paths` probe — but not `-pre-scan-hook`/`-post-scan-hook`,
+which aren't HTTP requests. The default, `0`, is unlimited and behaves
+exactly as if `-rate` were never added. Time spent waiting on the limiter
+never counts against `-timeout`, so a request queued behind a slow rate
+can't fail with a timeout purely for having waited — `-timeout` only starts
+once the limiter actually releases a request. One consequence: with `-rate`
+set, `-timeout` bounds each individual request mamori sends, including each
+hop of a redirect chain separately, rather than the whole chain combined —
+so a target that redirects several times can take up a multiple of
+`-timeout` in total, as long as no single hop exceeds it.
 
 `-H` attaches a header to every scan request, for endpoints that require
 auth (e.g. `-H 'Authorization: Bearer xyz' -H 'Cookie: session=abc'`). It
@@ -182,6 +202,7 @@ precedence.
 |---|---|
 | `MAMORI_WORKERS` | `-workers` |
 | `MAMORI_TIMEOUT` | `-timeout` |
+| `MAMORI_RATE` | `-rate` |
 | `MAMORI_OUTPUT` | `-o` |
 | `MAMORI_FAIL_ON` | `-fail-on` |
 | `MAMORI_CHECK_EXPOSED_PATHS` | `-check-exposed-paths` |
@@ -201,6 +222,7 @@ a YAML config file:
 ```yaml
 workers: 5
 timeout: 5s
+rate: 2
 output: json
 targets:
   - https://example.com

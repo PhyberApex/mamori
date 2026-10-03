@@ -185,6 +185,40 @@ func TestResolveConfigFileRejectsNonPositiveTimeout(t *testing.T) {
 	}
 }
 
+func TestResolveConfigFileLoadsRate(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `rate: 0.5`)
+
+	cfg, _, err := config.Resolve([]string{"-config", path}, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.Rate != 0.5 {
+		t.Errorf("Rate = %v, want 0.5 from config file", cfg.Rate)
+	}
+}
+
+func TestResolveConfigFileRejectsNegativeRate(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `rate: -1`)
+	if _, _, err := config.Resolve([]string{"-config", path}, noEnv); err == nil {
+		t.Error("Resolve() with a negative rate in config file returned nil error, want error")
+	}
+}
+
+func TestResolveEnvVarOverridesConfigFileRate(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `rate: 1`)
+
+	cfg, _, err := config.Resolve(
+		[]string{"-config", path},
+		envWith(map[string]string{"MAMORI_RATE": "5"}),
+	)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.Rate != 5 {
+		t.Errorf("Rate = %v, want 5 from MAMORI_RATE overriding config file", cfg.Rate)
+	}
+}
+
 func TestResolveConfigFileRejectsUnknownOutput(t *testing.T) {
 	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `output: xml`)
 	if _, _, err := config.Resolve([]string{"-config", path}, noEnv); err == nil {

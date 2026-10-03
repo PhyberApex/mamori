@@ -58,6 +58,9 @@ func TestResolveDefaults(t *testing.T) {
 	if cfg.HookTimeout != 30*time.Second {
 		t.Errorf("HookTimeout = %v, want default 30s", cfg.HookTimeout)
 	}
+	if cfg.Rate != 0 {
+		t.Errorf("Rate = %v, want default 0 (unlimited)", cfg.Rate)
+	}
 }
 
 func TestResolveEnvOverridesDefaults(t *testing.T) {
@@ -81,6 +84,83 @@ func TestResolveEnvOverridesDefaults(t *testing.T) {
 	}
 	if cfg.FailOn != scanner.SeverityMedium {
 		t.Errorf("FailOn = %q, want %q from MAMORI_FAIL_ON", cfg.FailOn, scanner.SeverityMedium)
+	}
+}
+
+func TestResolveRateEnvVar(t *testing.T) {
+	cfg, _, err := config.Resolve(nil, envWith(map[string]string{"MAMORI_RATE": "0.5"}))
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.Rate != 0.5 {
+		t.Errorf("Rate = %v, want 0.5 from MAMORI_RATE", cfg.Rate)
+	}
+}
+
+func TestResolveRateFlag(t *testing.T) {
+	cfg, _, err := config.Resolve([]string{"-rate", "2.5"}, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.Rate != 2.5 {
+		t.Errorf("Rate = %v, want 2.5 from -rate flag", cfg.Rate)
+	}
+}
+
+func TestResolveRateFlagOverridesEnv(t *testing.T) {
+	cfg, _, err := config.Resolve(
+		[]string{"-rate", "3"},
+		envWith(map[string]string{"MAMORI_RATE": "1"}),
+	)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.Rate != 3 {
+		t.Errorf("Rate = %v, want 3 from -rate flag overriding MAMORI_RATE", cfg.Rate)
+	}
+}
+
+func TestResolveRateZeroIsValid(t *testing.T) {
+	cfg, _, err := config.Resolve([]string{"-rate", "0"}, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() with -rate 0 returned error: %v, want 0 accepted as unlimited", err)
+	}
+	if cfg.Rate != 0 {
+		t.Errorf("Rate = %v, want 0", cfg.Rate)
+	}
+}
+
+func TestResolveRejectsNegativeRateFlag(t *testing.T) {
+	if _, _, err := config.Resolve([]string{"-rate", "-1"}, noEnv); err == nil {
+		t.Error("Resolve() with -rate -1 returned nil error, want error")
+	}
+}
+
+func TestResolveRejectsNaNRateFlag(t *testing.T) {
+	if _, _, err := config.Resolve([]string{"-rate", "NaN"}, noEnv); err == nil {
+		t.Error("Resolve() with -rate NaN returned nil error, want error")
+	}
+}
+
+func TestResolveRejectsInvalidRateEnvVar(t *testing.T) {
+	tests := []struct {
+		name string
+		vars map[string]string
+	}{
+		{"non-numeric rate", map[string]string{"MAMORI_RATE": "fast"}},
+		{"negative rate", map[string]string{"MAMORI_RATE": "-1"}},
+		// strconv.ParseFloat accepts "NaN" as a well-formed float64, and
+		// NaN satisfies neither "< 0" nor "> 0", so a validator that only
+		// checked "r < 0" would let it through and main's "Rate > 0" gate
+		// would then silently treat it as unlimited instead of erroring.
+		{"NaN rate", map[string]string{"MAMORI_RATE": "NaN"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, _, err := config.Resolve(nil, envWith(tt.vars)); err == nil {
+				t.Errorf("Resolve() with %v returned nil error, want error", tt.vars)
+			}
+		})
 	}
 }
 
