@@ -100,6 +100,12 @@ type Finding struct {
 	Severity  Severity `json:"severity"`
 	Reference string   `json:"reference"`
 	Message   string   `json:"message"`
+	// FinalURL is the URL of the response this Finding was actually judged
+	// on, set only when it differs from URL (the typed target) — see the
+	// Final URL glossary entry in CONTEXT.md. omitempty keeps a
+	// non-redirecting target's JSON byte-identical to before this field
+	// existed.
+	FinalURL string `json:"finalUrl,omitempty"`
 	// Suppressed records whether a config-file Suppression matched this
 	// Finding. It is orthogonal to Status: a suppressed Finding keeps
 	// whatever Status/Severity it already had, so existing JSON consumers

@@ -78,6 +78,7 @@ func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, bo
 
 	plain, originBased := splitOriginProbers(checkers)
 	findings := append(RunAll(plain, respHeaders, respURL), bodyFindings...)
+	setFinalURL(findings, targetURL, respURL)
 
 	// Only pay for the extra request when a configured Checker actually
 	// needs it. A probe failure is skipped rather than turned into an error
@@ -86,7 +87,9 @@ func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, bo
 	// target reported.
 	if len(originBased) > 0 {
 		if probeHeaders, probeURL, err := fetchOriginProbeHeaders(ctx, client, targetURL, reqHeaders); err == nil {
-			findings = append(findings, RunAll(originBased, probeHeaders, probeURL)...)
+			originFindings := RunAll(originBased, probeHeaders, probeURL)
+			setFinalURL(originFindings, targetURL, probeURL)
+			findings = append(findings, originFindings...)
 		}
 	}
 
@@ -154,6 +157,21 @@ func scanExposurePaths(ctx context.Context, client *http.Client, pathCheckers []
 	}
 	wg.Wait()
 	return findings
+}
+
+// setFinalURL stamps fs's FinalURL with respURL's string form, but only when
+// it differs from targetURL (the typed target) — see the Final URL glossary
+// entry in CONTEXT.md. Left unset (the zero value) when the two match, so a
+// non-redirecting target's Findings serialize identically to before this
+// field existed.
+func setFinalURL(fs []Finding, targetURL string, respURL *url.URL) {
+	final := respURL.String()
+	if final == targetURL {
+		return
+	}
+	for i := range fs {
+		fs[i].FinalURL = final
+	}
 }
 
 // targetOrigin returns targetURL's scheme+host, discarding any path/query:

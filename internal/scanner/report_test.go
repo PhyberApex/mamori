@@ -152,6 +152,65 @@ func TestTerminalReporterShowsInsecureMessage(t *testing.T) {
 	}
 }
 
+func TestTerminalReporterShowsRedirectLineUnderTargetHeader(t *testing.T) {
+	findings := []scanner.Finding{
+		{
+			URL:      "https://a.example",
+			Header:   "Transport",
+			Status:   scanner.StatusPass,
+			Severity: scanner.SeverityHigh,
+			FinalURL: "https://b.example/login",
+		},
+		{
+			URL:      "https://a.example",
+			Header:   "X-Frame-Options",
+			Status:   scanner.StatusMissing,
+			Severity: scanner.SeverityMedium,
+			FinalURL: "https://b.example/login",
+		},
+		{
+			URL:      "https://c.example",
+			Header:   "X-Frame-Options",
+			Status:   scanner.StatusMissing,
+			Severity: scanner.SeverityMedium,
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.TerminalReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+	lines := strings.Split(buf.String(), "\n")
+
+	urlIdx, redirectIdx, xfoIdx := -1, -1, -1
+	for i, line := range lines {
+		switch {
+		case strings.Contains(line, "https://a.example") && urlIdx == -1:
+			urlIdx = i
+		case strings.Contains(line, "redirected to https://b.example/login") && redirectIdx == -1:
+			redirectIdx = i
+		case strings.Contains(line, "X-Frame-Options") && xfoIdx == -1:
+			xfoIdx = i
+		}
+	}
+	if urlIdx == -1 || redirectIdx == -1 || xfoIdx == -1 {
+		t.Fatalf("missing expected lines\noutput:\n%s", buf.String())
+	}
+	if urlIdx >= redirectIdx || redirectIdx >= xfoIdx {
+		t.Errorf("want redirect line directly under the target header and before its findings\noutput:\n%s", buf.String())
+	}
+
+	if strings.Count(buf.String(), "redirected to") != 1 {
+		t.Errorf("want exactly one redirect line (both findings share the same FinalURL)\noutput:\n%s", buf.String())
+	}
+	if idx := strings.Index(buf.String(), "https://c.example"); idx != -1 {
+		rest := buf.String()[idx:]
+		if strings.Contains(rest, "redirected to") {
+			t.Errorf("non-redirecting target should have no redirect line\noutput:\n%s", buf.String())
+		}
+	}
+}
+
 func TestTerminalReporterShowsErrorMessage(t *testing.T) {
 	findings := []scanner.Finding{
 		{
@@ -460,6 +519,50 @@ func TestJSONReporterEmitsOneFindingPerLine(t *testing.T) {
 	}
 	if third["message"] != "unsafe-url leaks the full URL, including query strings, to third parties on cross-origin requests" {
 		t.Errorf("weak finding message = %v, want the weakness explanation", third["message"])
+	}
+}
+
+func TestJSONReporterCarriesFinalURLAndOmitsItOtherwise(t *testing.T) {
+	findings := []scanner.Finding{
+		{
+			URL:      "https://a.example",
+			Header:   "Transport",
+			Status:   scanner.StatusInsecure,
+			Severity: scanner.SeverityHigh,
+			FinalURL: "https://b.example/login",
+		},
+		{
+			URL:      "https://a.example",
+			Header:   "X-Frame-Options",
+			Status:   scanner.StatusMissing,
+			Severity: scanner.SeverityMedium,
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.JSONReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("got %d lines, want one per finding (2)\noutput:\n%s", len(lines), buf.String())
+	}
+
+	var withFinalURL map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &withFinalURL); err != nil {
+		t.Fatalf("line 1 is not valid JSON: %v\nline: %s", err, lines[0])
+	}
+	if withFinalURL["finalUrl"] != "https://b.example/login" {
+		t.Errorf("finalUrl = %v, want %q", withFinalURL["finalUrl"], "https://b.example/login")
+	}
+
+	var withoutFinalURL map[string]any
+	if err := json.Unmarshal([]byte(lines[1]), &withoutFinalURL); err != nil {
+		t.Fatalf("line 2 is not valid JSON: %v\nline: %s", err, lines[1])
+	}
+	if _, present := withoutFinalURL["finalUrl"]; present {
+		t.Errorf("finding with no final URL has a %q key, want it omitted", "finalUrl")
 	}
 }
 

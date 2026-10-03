@@ -241,6 +241,127 @@ func TestScanTransportChecker(t *testing.T) {
 	})
 }
 
+// TestScanSetsFinalURLOnlyWhenTheScanResponseRedirects drives TransportChecker
+// (a plain, non-OriginProber Checker judged on the scan response) through a
+// redirecting and a non-redirecting target, per the Final URL glossary entry
+// (CONTEXT.md): FinalURL is set to the post-redirect response URL only when it
+// differs from the typed target.
+func TestScanSetsFinalURLOnlyWhenTheScanResponseRedirects(t *testing.T) {
+	t.Run("redirecting target carries FinalURL", func(t *testing.T) {
+		loginSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		t.Cleanup(loginSrv.Close)
+		homeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, loginSrv.URL+"/login", http.StatusFound)
+		}))
+		t.Cleanup(homeSrv.Close)
+
+		findings := scanner.Scan(t.Context(), homeSrv.Client(), []scanner.Checker{scanner.TransportChecker{}}, nil, nil, []string{homeSrv.URL}, 1, nil)
+		if len(findings) != 1 {
+			t.Fatalf("Scan() returned %d findings, want 1: %+v", len(findings), findings)
+		}
+		f := findings[0]
+		if f.URL != homeSrv.URL {
+			t.Errorf("URL = %q, want %q (stays keyed by the typed target)", f.URL, homeSrv.URL)
+		}
+		if want := loginSrv.URL + "/login"; f.FinalURL != want {
+			t.Errorf("FinalURL = %q, want %q", f.FinalURL, want)
+		}
+	})
+
+	t.Run("non-redirecting target carries no FinalURL", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		t.Cleanup(srv.Close)
+
+		findings := scanner.Scan(t.Context(), srv.Client(), []scanner.Checker{scanner.TransportChecker{}}, nil, nil, []string{srv.URL}, 1, nil)
+		if len(findings) != 1 {
+			t.Fatalf("Scan() returned %d findings, want 1: %+v", len(findings), findings)
+		}
+		if f := findings[0]; f.FinalURL != "" {
+			t.Errorf("FinalURL = %q, want empty (no redirect)", f.FinalURL)
+		}
+	})
+}
+
+// TestScanPathCheckerFindingsNeverCarryFinalURL covers the acceptance
+// criterion that a redirecting scan response still leaves PathChecker
+// Findings without a FinalURL: a path probe is a separate request to the
+// target's origin, never judged against the scan response's redirect chain.
+func TestScanPathCheckerFindingsNeverCarryFinalURL(t *testing.T) {
+	var homeSrv *httptest.Server
+	homeSrv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			// Only the scan request (against the target's root) redirects;
+			// the path-checker probes below hit this same origin directly
+			// and must not be caught by this redirect, or the exposure
+			// baseline check (which expects 404) would misfire.
+			http.Redirect(w, r, homeSrv.URL+"/login", http.StatusFound)
+		case "/.env":
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(homeSrv.Close)
+
+	findings := scanner.Scan(t.Context(), homeSrv.Client(), nil, nil, scanner.PathCheckersFor(true, nil), []string{homeSrv.URL}, 1, nil)
+
+	var exposed []scanner.Finding
+	for _, f := range findings {
+		if f.Status == scanner.StatusExposed {
+			exposed = append(exposed, f)
+		}
+	}
+	if len(exposed) != 1 || exposed[0].Header != ".env" {
+		t.Fatalf("exposed findings = %+v, want exactly one for .env", exposed)
+	}
+	if exposed[0].FinalURL != "" {
+		t.Errorf("FinalURL = %q, want empty: a PathChecker Finding never carries one", exposed[0].FinalURL)
+	}
+}
+
+// TestScanFinalURLIsIndependentPerProbe covers the acceptance criterion that
+// the plain scan response and the CORS probe response are each compared to
+// the typed target independently: here only the probe redirects, so only the
+// CORSChecker Finding (an OriginProber judged on the probe response) carries
+// FinalURL.
+func TestScanFinalURLIsIndependentPerProbe(t *testing.T) {
+	probeTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", scanner.CORSProbeOrigin)
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+	}))
+	t.Cleanup(probeTarget.Close)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Origin") != "" {
+			http.Redirect(w, r, probeTarget.URL, http.StatusFound)
+			return
+		}
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+	}))
+	t.Cleanup(srv.Close)
+
+	findings := scanner.Scan(t.Context(), srv.Client(), []scanner.Checker{scanner.ContentTypeOptionsChecker{}, scanner.CORSChecker{}}, nil, nil, []string{srv.URL}, 1, nil)
+
+	var plain, cors *scanner.Finding
+	for i := range findings {
+		switch findings[i].Header {
+		case "X-Content-Type-Options":
+			plain = &findings[i]
+		case "Access-Control-Allow-Origin":
+			cors = &findings[i]
+		}
+	}
+	if plain == nil || cors == nil {
+		t.Fatalf("got findings %+v, want one X-Content-Type-Options and one Access-Control-Allow-Origin finding", findings)
+	}
+	if plain.FinalURL != "" {
+		t.Errorf("plain finding FinalURL = %q, want empty: its own request did not redirect", plain.FinalURL)
+	}
+	if want := probeTarget.URL; cors.FinalURL != want {
+		t.Errorf("CORS finding FinalURL = %q, want %q: judged against the redirected probe response", cors.FinalURL, want)
+	}
+}
+
 func TestScanSkipsBodyFetchWhenNoBodyCheckersConfigured(t *testing.T) {
 	var gotMethod string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -340,6 +461,9 @@ func TestScanUnreachableTargetYieldsErrorFinding(t *testing.T) {
 	}
 	if f.Message == "" {
 		t.Error("Message is empty, want the failure message")
+	}
+	if f.FinalURL != "" {
+		t.Errorf("FinalURL = %q, want empty: the fetch itself failed, no response was ever judged", f.FinalURL)
 	}
 }
 
