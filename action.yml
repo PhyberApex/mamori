@@ -27,7 +27,7 @@ runs:
       id: scan
       shell: bash
       env:
-        MAMORI_TARGETS: ${{ inputs.targets }}
+        MAMORI_TARGETS_INPUT: ${{ inputs.targets }}
         MAMORI_CONFIG_INPUT: ${{ inputs.config }}
         MAMORI_FAIL_ON_INPUT: ${{ inputs.fail-on }}
         MAMORI_IMAGE: ghcr.io/phyberapex/mamori:${{ github.action_ref }}
@@ -41,19 +41,30 @@ runs:
         fi
 
         exit_code=0
-        printf '%s\n' "$MAMORI_TARGETS" | docker run --rm -i \
+        printf '%s\n' "$MAMORI_TARGETS_INPUT" | docker run --rm -i \
           -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$GITHUB_WORKSPACE" \
           "$MAMORI_IMAGE" "${args[@]}" >"$MAMORI_SARIF_PATH" || exit_code=$?
 
         echo "sarif-path=$MAMORI_SARIF_PATH" >>"$GITHUB_OUTPUT"
         echo "exit-code=$exit_code" >>"$GITHUB_OUTPUT"
+        # Empty when mamori errored before writing a report at all (e.g. no
+        # targets resolved, a bad -config path, a failed pre-scan hook) —
+        # uploading that would just fail the upload step on malformed SARIF
+        # instead of surfacing mamori's own error above.
+        if [[ -s "$MAMORI_SARIF_PATH" ]]; then
+          echo "has-sarif=true" >>"$GITHUB_OUTPUT"
+        else
+          echo "has-sarif=false" >>"$GITHUB_OUTPUT"
+        fi
 
     - name: Upload SARIF
-      if: inputs.upload-sarif == 'true'
+      if: inputs.upload-sarif == 'true' && steps.scan.outputs.has-sarif == 'true'
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: ${{ steps.scan.outputs.sarif-path }}
 
+    # Split out from the scan step so the SARIF upload above always runs
+    # first, even when the scan trips -fail-on.
     - name: Enforce fail-on
       shell: bash
       env:
