@@ -228,6 +228,47 @@ matching once it has passed, at which point the finding gates under
 `-fail-on` again and mamori names the expired entry on stderr — so an
 accepted risk gets re-reviewed instead of being accepted forever.
 
+## GitHub Action
+
+Run mamori as a step in a workflow and publish its findings to the
+repository's Security tab, without wiring up Docker, output redirection, and
+the SARIF upload step by hand:
+
+```yaml
+- uses: PhyberApex/mamori@v1.3.0
+  with:
+    targets: |
+      https://example.com
+      https://example.org
+    config: .mamori.yaml
+    fail-on: high
+    upload-sarif: true
+```
+
+| Input | Default | Description |
+|---|---|---|
+| `targets` | *(none)* | one target URL per line, parsed the same way mamori parses piped stdin |
+| `config` | *(none)* | path to a YAML config file, passed through as `-config` |
+| `fail-on` | `none` | exit non-zero on findings at or above this severity: `low`, `medium`, `high`, or `none` |
+| `upload-sarif` | `true` | upload the scan's SARIF output to GitHub code scanning |
+
+`targets` and a `config` file's `targets` list merge additively, the same as
+CLI arguments/stdin and a config file merge today.
+
+The action runs the release image matching its own ref: `uses:
+PhyberApex/mamori@v1.3.0` runs `ghcr.io/phyberapex/mamori:v1.3.0`, the ref
+used verbatim — pin it to one of mamori's own `vX.Y.Z` tags.
+
+`upload-sarif: true` (the default) requires the caller's job to grant
+`security-events: write`:
+
+```yaml
+permissions:
+  security-events: write
+```
+
+The action supports Linux runners only.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
