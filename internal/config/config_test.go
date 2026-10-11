@@ -298,6 +298,63 @@ func TestResolveAcceptsSarifOutputFlag(t *testing.T) {
 	}
 }
 
+func TestResolveCertExpiryDaysDefault(t *testing.T) {
+	cfg, _, err := config.Resolve(nil, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.CertExpiryDays != 30 {
+		t.Errorf("CertExpiryDays = %d, want default 30", cfg.CertExpiryDays)
+	}
+}
+
+func TestResolveCertExpiryDaysEnvVar(t *testing.T) {
+	cfg, _, err := config.Resolve(nil, envWith(map[string]string{"MAMORI_CERT_EXPIRY_DAYS": "45"}))
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.CertExpiryDays != 45 {
+		t.Errorf("CertExpiryDays = %d, want 45 from MAMORI_CERT_EXPIRY_DAYS", cfg.CertExpiryDays)
+	}
+}
+
+func TestResolveCertExpiryDaysFlagOverridesEnv(t *testing.T) {
+	cfg, _, err := config.Resolve(
+		[]string{"-cert-expiry-days", "60"},
+		envWith(map[string]string{"MAMORI_CERT_EXPIRY_DAYS": "45"}),
+	)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.CertExpiryDays != 60 {
+		t.Errorf("CertExpiryDays = %d, want 60 from -cert-expiry-days flag overriding MAMORI_CERT_EXPIRY_DAYS", cfg.CertExpiryDays)
+	}
+}
+
+func TestResolveRejectsNonPositiveCertExpiryDaysFlag(t *testing.T) {
+	if _, _, err := config.Resolve([]string{"-cert-expiry-days", "0"}, noEnv); err == nil {
+		t.Error("Resolve() with -cert-expiry-days 0 returned nil error, want error")
+	}
+}
+
+func TestResolveRejectsInvalidCertExpiryDaysEnvVar(t *testing.T) {
+	tests := []struct {
+		name string
+		vars map[string]string
+	}{
+		{"non-numeric", map[string]string{"MAMORI_CERT_EXPIRY_DAYS": "soon"}},
+		{"zero", map[string]string{"MAMORI_CERT_EXPIRY_DAYS": "0"}},
+		{"negative", map[string]string{"MAMORI_CERT_EXPIRY_DAYS": "-5"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, _, err := config.Resolve(nil, envWith(tt.vars)); err == nil {
+				t.Errorf("Resolve() with %v returned nil error, want error", tt.vars)
+			}
+		})
+	}
+}
+
 func TestResolveRejectsUnknownOutputFlag(t *testing.T) {
 	if _, _, err := config.Resolve([]string{"-o", "xml"}, noEnv); err == nil {
 		t.Error("Resolve() with -o xml returned nil error, want error")

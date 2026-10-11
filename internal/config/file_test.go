@@ -219,6 +219,40 @@ func TestResolveEnvVarOverridesConfigFileRate(t *testing.T) {
 	}
 }
 
+func TestResolveConfigFileLoadsCertExpiryDays(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `certExpiryDays: 45`)
+
+	cfg, _, err := config.Resolve([]string{"-config", path}, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.CertExpiryDays != 45 {
+		t.Errorf("CertExpiryDays = %d, want 45 from config file", cfg.CertExpiryDays)
+	}
+}
+
+func TestResolveConfigFileRejectsNonPositiveCertExpiryDays(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `certExpiryDays: 0`)
+	if _, _, err := config.Resolve([]string{"-config", path}, noEnv); err == nil {
+		t.Error("Resolve() with certExpiryDays: 0 in config file returned nil error, want error")
+	}
+}
+
+func TestResolveEnvVarOverridesConfigFileCertExpiryDays(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `certExpiryDays: 10`)
+
+	cfg, _, err := config.Resolve(
+		[]string{"-config", path},
+		envWith(map[string]string{"MAMORI_CERT_EXPIRY_DAYS": "20"}),
+	)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if cfg.CertExpiryDays != 20 {
+		t.Errorf("CertExpiryDays = %d, want 20 from MAMORI_CERT_EXPIRY_DAYS overriding config file", cfg.CertExpiryDays)
+	}
+}
+
 func TestResolveConfigFileRejectsUnknownOutput(t *testing.T) {
 	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `output: xml`)
 	if _, _, err := config.Resolve([]string{"-config", path}, noEnv); err == nil {

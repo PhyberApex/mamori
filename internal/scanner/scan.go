@@ -3,6 +3,7 @@ package scanner
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
 	"io"
 	"net/http"
@@ -15,7 +16,7 @@ import (
 // target becomes an error finding instead of aborting the scan, so every
 // target is accounted for in the report. headers, if non-nil, is applied to
 // every outgoing request (e.g. for endpoints that require auth).
-func Scan(ctx context.Context, client *http.Client, checkers []Checker, bodyCheckers []BodyChecker, pathCheckers []PathChecker, urls []string, workers int, headers http.Header) []Finding {
+func Scan(ctx context.Context, client *http.Client, checkers []Checker, bodyCheckers []BodyChecker, pathCheckers []PathChecker, tlsCheckers []TLSChecker, urls []string, workers int, headers http.Header) []Finding {
 	jobs := make(chan int)
 	// Each worker writes only to its own job's index, so the slice needs no
 	// mutex: distinct goroutines never touch the same element, and wg.Wait()
@@ -32,7 +33,7 @@ func Scan(ctx context.Context, client *http.Client, checkers []Checker, bodyChec
 			// Ranging over a channel keeps receiving until it is closed,
 			// which is how each worker knows there is no more work.
 			for i := range jobs {
-				perTarget[i] = scanTarget(ctx, client, checkers, bodyCheckers, pathCheckers, urls[i], headers)
+				perTarget[i] = scanTarget(ctx, client, checkers, bodyCheckers, pathCheckers, tlsCheckers, urls[i], headers)
 			}
 		}()
 	}
@@ -57,18 +58,19 @@ func Scan(ctx context.Context, client *http.Client, checkers []Checker, bodyChec
 // user typed and is what every returned Finding is keyed by (see the loop at
 // the bottom); it is deliberately not passed to RunAll/RunAllBody, which
 // instead get the final, post-redirect URL each response actually came from.
-func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, bodyCheckers []BodyChecker, pathCheckers []PathChecker, targetURL string, reqHeaders http.Header) []Finding {
+func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, bodyCheckers []BodyChecker, pathCheckers []PathChecker, tlsCheckers []TLSChecker, targetURL string, reqHeaders http.Header) []Finding {
 	var respHeaders http.Header
 	var respURL *url.URL
 	var respStatus int
+	var respTLS *tls.ConnectionState
 	var bodyFindings []Finding
 	var err error
 
 	if len(bodyCheckers) == 0 {
-		respHeaders, respURL, respStatus, err = fetchHeaders(ctx, client, targetURL, reqHeaders)
+		respHeaders, respURL, respStatus, respTLS, err = fetchHeaders(ctx, client, targetURL, reqHeaders)
 	} else {
 		var body []byte
-		respHeaders, respURL, respStatus, body, err = fetchBody(ctx, client, targetURL, reqHeaders)
+		respHeaders, respURL, respStatus, respTLS, body, err = fetchBody(ctx, client, targetURL, reqHeaders)
 		if err == nil {
 			bodyFindings = RunAllBody(bodyCheckers, body, respURL)
 		}
@@ -88,6 +90,7 @@ func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, bo
 
 	plain, originBased := splitOriginProbers(checkers)
 	findings := append(RunAll(plain, respHeaders, respURL), bodyFindings...)
+	findings = append(findings, RunAllTLS(tlsCheckers, respTLS, respURL)...)
 	setFinalURL(findings, targetURL, respURL)
 	setStatusCode(findings, respStatus)
 
@@ -226,7 +229,7 @@ func targetOrigin(targetURL string) (string, error) {
 // header inspection.
 func probePathStatus(ctx context.Context, client *http.Client, origin, path string, reqHeaders http.Header) (int, error) {
 	target := origin + "/" + strings.TrimPrefix(path, "/")
-	_, _, status, err := doRequest(ctx, client, http.MethodGet, target, reqHeaders, "")
+	_, _, status, _, err := doRequest(ctx, client, http.MethodGet, target, reqHeaders, "")
 	return status, err
 }
 
@@ -260,7 +263,7 @@ func splitOriginProbers(checkers []Checker) (plain, originBased []Checker) {
 	return plain, originBased
 }
 
-func fetchHeaders(ctx context.Context, client *http.Client, targetURL string, reqHeaders http.Header) (http.Header, *url.URL, int, error) {
+func fetchHeaders(ctx context.Context, client *http.Client, targetURL string, reqHeaders http.Header) (http.Header, *url.URL, int, *tls.ConnectionState, error) {
 	return fetchHeadersWithOrigin(ctx, client, targetURL, reqHeaders, "")
 }
 
@@ -269,21 +272,22 @@ func fetchHeaders(ctx context.Context, client *http.Client, targetURL string, re
 // Origin header so a CORS-misconfigured server reveals itself in the
 // response.
 func fetchOriginProbeHeaders(ctx context.Context, client *http.Client, targetURL string, reqHeaders http.Header) (http.Header, *url.URL, int, error) {
-	return fetchHeadersWithOrigin(ctx, client, targetURL, reqHeaders, CORSProbeOrigin)
+	headers, respURL, status, _, err := fetchHeadersWithOrigin(ctx, client, targetURL, reqHeaders, CORSProbeOrigin)
+	return headers, respURL, status, err
 }
 
-func fetchHeadersWithOrigin(ctx context.Context, client *http.Client, targetURL string, reqHeaders http.Header, origin string) (http.Header, *url.URL, int, error) {
-	headers, respURL, status, err := doRequest(ctx, client, http.MethodHead, targetURL, reqHeaders, origin)
+func fetchHeadersWithOrigin(ctx context.Context, client *http.Client, targetURL string, reqHeaders http.Header, origin string) (http.Header, *url.URL, int, *tls.ConnectionState, error) {
+	headers, respURL, status, respTLS, err := doRequest(ctx, client, http.MethodHead, targetURL, reqHeaders, origin)
 	if err != nil {
-		return nil, nil, 0, err
+		return nil, nil, 0, nil, err
 	}
 	if status == http.StatusMethodNotAllowed || status == http.StatusNotImplemented {
-		headers, respURL, status, err = doRequest(ctx, client, http.MethodGet, targetURL, reqHeaders, origin)
+		headers, respURL, status, respTLS, err = doRequest(ctx, client, http.MethodGet, targetURL, reqHeaders, origin)
 		if err != nil {
-			return nil, nil, 0, err
+			return nil, nil, 0, nil, err
 		}
 	}
-	return headers, respURL, status, nil
+	return headers, respURL, status, respTLS, nil
 }
 
 // maxBodyBytes caps how much of a response body fetchBody will buffer, so a
@@ -294,29 +298,29 @@ const maxBodyBytes = 10 * 1024 * 1024 // 10 MiB
 
 // fetchBody always issues a GET, since body checkers need the body itself
 // and there's no cheaper request that would provide it.
-func fetchBody(ctx context.Context, client *http.Client, targetURL string, reqHeaders http.Header) (http.Header, *url.URL, int, []byte, error) {
+func fetchBody(ctx context.Context, client *http.Client, targetURL string, reqHeaders http.Header) (http.Header, *url.URL, int, *tls.ConnectionState, []byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, http.NoBody)
 	if err != nil {
-		return nil, nil, 0, nil, err
+		return nil, nil, 0, nil, nil, err
 	}
 	applyHeaders(req, reqHeaders)
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, nil, 0, nil, err
+		return nil, nil, 0, nil, nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
 	if err != nil {
-		return nil, nil, 0, nil, err
+		return nil, nil, 0, nil, nil, err
 	}
-	return resp.Header, resp.Request.URL, resp.StatusCode, body, nil
+	return resp.Header, resp.Request.URL, resp.StatusCode, resp.TLS, body, nil
 }
 
-func doRequest(ctx context.Context, client *http.Client, method, targetURL string, reqHeaders http.Header, origin string) (http.Header, *url.URL, int, error) {
+func doRequest(ctx context.Context, client *http.Client, method, targetURL string, reqHeaders http.Header, origin string) (http.Header, *url.URL, int, *tls.ConnectionState, error) {
 	req, err := http.NewRequestWithContext(ctx, method, targetURL, http.NoBody)
 	if err != nil {
-		return nil, nil, 0, err
+		return nil, nil, 0, nil, err
 	}
 	applyHeaders(req, reqHeaders)
 	if origin != "" {
@@ -324,7 +328,7 @@ func doRequest(ctx context.Context, client *http.Client, method, targetURL strin
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, nil, 0, err
+		return nil, nil, 0, nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -336,7 +340,8 @@ func doRequest(ctx context.Context, client *http.Client, method, targetURL strin
 	// the last request actually sent, so its URL is the final, post-redirect
 	// URL the headers we're returning came from. That's the honest URL for a
 	// Checker to judge scheme-dependent behavior against, not targetURL.
-	return resp.Header, resp.Request.URL, resp.StatusCode, nil
+	// resp.TLS is nil whenever this response arrived over plain HTTP.
+	return resp.Header, resp.Request.URL, resp.StatusCode, resp.TLS, nil
 }
 
 // applyHeaders sets each of reqHeaders on req, overriding any header of the
