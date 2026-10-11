@@ -138,6 +138,13 @@ so a target that redirects several times can take up a multiple of
 auth (e.g. `-H 'Authorization: Bearer xyz' -H 'Cookie: session=abc'`). It
 has no environment variable or config file equivalent.
 
+Every request mamori sends — including redirect hops and
+`-check-exposed-paths` probes — carries a default `User-Agent` of
+`mamori/<version> (+https://github.com/PhyberApex/mamori)`, where
+`<version>` is the same string `-version` prints (`dev` for a plain
+`go build`/`go run`). This lets an operator allowlist mamori in a WAF or
+rate limiter. `-H 'User-Agent: ...'` overrides it, same as any other header.
+
 `-check-exposed-paths` turns on an additional, opt-in check category: for
 each target, mamori probes its origin for well-known sensitive paths
 (version control metadata, `.env` files, credential stores, common backup
