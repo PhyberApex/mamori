@@ -61,6 +61,8 @@ https://example.com
   [MISSING] Content-Security-Policy (high) → https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html
   [MISSING] Referrer-Policy (low) → https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html#referrer-policy
   [MISSING] Cross-Origin-Resource-Policy (medium) → https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cross-Origin-Resource-Policy
+
+1 target · 5 missing
 ```
 
 Full reference for every check mamori performs is available at
