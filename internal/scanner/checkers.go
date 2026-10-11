@@ -541,7 +541,7 @@ type CacheControlChecker struct{}
 // soon as any one occurrence is weak, which is right for headers where more
 // occurrences can only narrow protection. Here it's the opposite — a cookie
 // response with multiple Cache-Control occurrences is safe as soon as any
-// one of them includes no-store/private, regardless of what the others say
+// one of them includes no-store, regardless of what the others say
 // (acceptance criterion #6 of the originating issue).
 func (CacheControlChecker) Check(headers http.Header, _ *url.URL) []Finding {
 	if firstNonBlankValue(headers, "Set-Cookie") == "" {
@@ -578,19 +578,19 @@ func (CacheControlChecker) Check(headers http.Header, _ *url.URL) []Finding {
 		Status:    StatusWeak,
 		Severity:  SeverityMedium,
 		Reference: cookieReference,
-		Message:   fmt.Sprintf("%q does not include no-store or private, so a shared cache may store this cookie-bearing response", lastNonBlankValue),
+		Message:   fmt.Sprintf("%q does not include no-store, so a shared cache may store this cookie-bearing response", lastNonBlankValue),
 	}}
 }
 
 // cacheControlPasses reports whether value's comma-separated directive list
-// contains no-store and/or private, case-insensitively and
-// whitespace-trimmed — the only directives that keep a shared cache from
-// storing a cookie-bearing response.
+// contains no-store, case-insensitively and whitespace-trimmed — the only
+// directive that keeps a shared cache from storing a cookie-bearing
+// response. private still lets the browser's own local cache store the
+// response, so it is weak rather than a pass.
 func cacheControlPasses(value string) bool {
 	for _, directive := range strings.Split(value, ",") {
 		name, _, _ := strings.Cut(strings.TrimSpace(directive), "=")
-		switch strings.ToLower(strings.TrimSpace(name)) {
-		case "no-store", "private":
+		if strings.ToLower(strings.TrimSpace(name)) == "no-store" {
 			return true
 		}
 	}

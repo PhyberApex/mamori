@@ -735,7 +735,7 @@ func TestCacheControlCheckerMissingWithCookie(t *testing.T) {
 }
 
 func TestCacheControlCheckerPassValues(t *testing.T) {
-	tests := []string{"no-store", "private", "no-store, max-age=0", "max-age=0, private"}
+	tests := []string{"no-store", "no-store, max-age=0"}
 	for _, value := range tests {
 		t.Run(value, func(t *testing.T) {
 			findings := scanner.CacheControlChecker{}.Check(http.Header{
@@ -753,7 +753,7 @@ func TestCacheControlCheckerPassValues(t *testing.T) {
 }
 
 func TestCacheControlCheckerWeakValues(t *testing.T) {
-	tests := []string{"public, max-age=3600", "no-cache", "max-age=0", "public"}
+	tests := []string{"public, max-age=3600", "no-cache", "max-age=0", "public", "private", "max-age=0, private"}
 	for _, value := range tests {
 		t.Run(value, func(t *testing.T) {
 			findings := scanner.CacheControlChecker{}.Check(http.Header{
