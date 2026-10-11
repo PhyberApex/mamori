@@ -183,8 +183,12 @@ var summaryStatuses = []Status{StatusInsecure, StatusMissing, StatusWeak, Status
 
 // summaryLine renders the one-line scan summary that follows the last
 // target's block: a target count, then whichever of the status / known-
-// suppressed / fail-on clauses have something to show, joined by " · ". See
-// the Agent Brief on issue #121 for the exact rendering rules.
+// suppressed / fail-on clauses have something to show, joined by " · ".
+// Status and known/suppressed counts are independent tallies over the same
+// Finding set rather than a partition — a Finding counted under one status
+// clause is counted again under known/suppressed if it carries either flag —
+// so every clause here can be read on its own without cross-checking the
+// others. A clause is omitted entirely once its own count(s) are all zero.
 func summaryLine(findings []Finding, targetCount int, failOn Severity) string {
 	parts := []string{fmt.Sprintf("%d target%s", targetCount, pluralSuffix(targetCount))}
 
@@ -232,6 +236,8 @@ func summaryLine(findings []Finding, targetCount int, failOn Severity) string {
 	return strings.Join(parts, " · ")
 }
 
+// pluralSuffix returns "s" unless n is exactly 1, so callers can render an
+// English count ("1 target" / "2 targets") without a branch of their own.
 func pluralSuffix(n int) string {
 	if n == 1 {
 		return ""

@@ -65,6 +65,16 @@ https://example.com
 1 target · 5 missing
 ```
 
+The terminal report always ends with this one-line summary: a target count,
+then a clause per non-`pass` status present (`insecure`, `missing`, `weak`,
+`exposed`, `error`, in that order, each omitted at a zero count), then a
+`known`/`suppressed` clause tallying those two independent flags across every
+finding, then — only when `-fail-on` is set to something other than `none` —
+`fail-on <threshold>: passed` or `failed`, mirroring the exit-code gate
+described below. Any clause with nothing to show is omitted entirely, so a
+scan with no non-pass findings and no `-fail-on` prints just the target
+count. `-o json` and `-o sarif` are unaffected — the summary is terminal-only.
+
 Full reference for every check mamori performs is available at
 [phyberapex.github.io/mamori](https://phyberapex.github.io/mamori/).
 
