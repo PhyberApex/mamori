@@ -60,14 +60,15 @@ func Scan(ctx context.Context, client *http.Client, checkers []Checker, bodyChec
 func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, bodyCheckers []BodyChecker, pathCheckers []PathChecker, targetURL string, reqHeaders http.Header) []Finding {
 	var respHeaders http.Header
 	var respURL *url.URL
+	var respStatus int
 	var bodyFindings []Finding
 	var err error
 
 	if len(bodyCheckers) == 0 {
-		respHeaders, respURL, err = fetchHeaders(ctx, client, targetURL, reqHeaders)
+		respHeaders, respURL, respStatus, err = fetchHeaders(ctx, client, targetURL, reqHeaders)
 	} else {
 		var body []byte
-		respHeaders, respURL, body, err = fetchBody(ctx, client, targetURL, reqHeaders)
+		respHeaders, respURL, respStatus, body, err = fetchBody(ctx, client, targetURL, reqHeaders)
 		if err == nil {
 			bodyFindings = RunAllBody(bodyCheckers, body, respURL)
 		}
@@ -88,6 +89,7 @@ func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, bo
 	plain, originBased := splitOriginProbers(checkers)
 	findings := append(RunAll(plain, respHeaders, respURL), bodyFindings...)
 	setFinalURL(findings, targetURL, respURL)
+	setStatusCode(findings, respStatus)
 
 	// Only pay for the extra request when a configured Checker actually
 	// needs it. A probe failure is skipped rather than turned into an error
@@ -95,9 +97,10 @@ func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, bo
 	// extra round trip failing shouldn't blank out everything else this
 	// target reported.
 	if len(originBased) > 0 {
-		if probeHeaders, probeURL, err := fetchOriginProbeHeaders(ctx, client, targetURL, reqHeaders); err == nil {
+		if probeHeaders, probeURL, probeStatus, err := fetchOriginProbeHeaders(ctx, client, targetURL, reqHeaders); err == nil {
 			originFindings := RunAll(originBased, probeHeaders, probeURL)
 			setFinalURL(originFindings, targetURL, probeURL)
+			setStatusCode(originFindings, probeStatus)
 			findings = append(findings, originFindings...)
 		}
 	}
@@ -191,6 +194,19 @@ func setFinalURL(fs []Finding, targetURL string, respURL *url.URL) {
 	}
 }
 
+// setStatusCode stamps fs's StatusCode with status, but only when status is
+// not 2xx — see the Final Status glossary entry in CONTEXT.md. Left unset
+// (the zero value) when the response was 2xx, so a target whose judged
+// response is 2xx serializes identically to before this field existed.
+func setStatusCode(fs []Finding, status int) {
+	if status/100 == 2 {
+		return
+	}
+	for i := range fs {
+		fs[i].StatusCode = status
+	}
+}
+
 // targetOrigin returns targetURL's scheme+host, discarding any path/query:
 // exposure paths are always probed root-relative to the origin, never
 // relative to whatever path component the target URL itself has.
@@ -244,7 +260,7 @@ func splitOriginProbers(checkers []Checker) (plain, originBased []Checker) {
 	return plain, originBased
 }
 
-func fetchHeaders(ctx context.Context, client *http.Client, targetURL string, reqHeaders http.Header) (http.Header, *url.URL, error) {
+func fetchHeaders(ctx context.Context, client *http.Client, targetURL string, reqHeaders http.Header) (http.Header, *url.URL, int, error) {
 	return fetchHeadersWithOrigin(ctx, client, targetURL, reqHeaders, "")
 }
 
@@ -252,22 +268,22 @@ func fetchHeaders(ctx context.Context, client *http.Client, targetURL string, re
 // need: identical to fetchHeaders, but carrying a synthetic cross-origin
 // Origin header so a CORS-misconfigured server reveals itself in the
 // response.
-func fetchOriginProbeHeaders(ctx context.Context, client *http.Client, targetURL string, reqHeaders http.Header) (http.Header, *url.URL, error) {
+func fetchOriginProbeHeaders(ctx context.Context, client *http.Client, targetURL string, reqHeaders http.Header) (http.Header, *url.URL, int, error) {
 	return fetchHeadersWithOrigin(ctx, client, targetURL, reqHeaders, CORSProbeOrigin)
 }
 
-func fetchHeadersWithOrigin(ctx context.Context, client *http.Client, targetURL string, reqHeaders http.Header, origin string) (http.Header, *url.URL, error) {
+func fetchHeadersWithOrigin(ctx context.Context, client *http.Client, targetURL string, reqHeaders http.Header, origin string) (http.Header, *url.URL, int, error) {
 	headers, respURL, status, err := doRequest(ctx, client, http.MethodHead, targetURL, reqHeaders, origin)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, 0, err
 	}
 	if status == http.StatusMethodNotAllowed || status == http.StatusNotImplemented {
-		headers, respURL, _, err = doRequest(ctx, client, http.MethodGet, targetURL, reqHeaders, origin)
+		headers, respURL, status, err = doRequest(ctx, client, http.MethodGet, targetURL, reqHeaders, origin)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, 0, err
 		}
 	}
-	return headers, respURL, nil
+	return headers, respURL, status, nil
 }
 
 // maxBodyBytes caps how much of a response body fetchBody will buffer, so a
@@ -278,23 +294,23 @@ const maxBodyBytes = 10 * 1024 * 1024 // 10 MiB
 
 // fetchBody always issues a GET, since body checkers need the body itself
 // and there's no cheaper request that would provide it.
-func fetchBody(ctx context.Context, client *http.Client, targetURL string, reqHeaders http.Header) (http.Header, *url.URL, []byte, error) {
+func fetchBody(ctx context.Context, client *http.Client, targetURL string, reqHeaders http.Header) (http.Header, *url.URL, int, []byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, http.NoBody)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, 0, nil, err
 	}
 	applyHeaders(req, reqHeaders)
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, 0, nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, 0, nil, err
 	}
-	return resp.Header, resp.Request.URL, body, nil
+	return resp.Header, resp.Request.URL, resp.StatusCode, body, nil
 }
 
 func doRequest(ctx context.Context, client *http.Client, method, targetURL string, reqHeaders http.Header, origin string) (http.Header, *url.URL, int, error) {

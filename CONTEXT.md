@@ -16,6 +16,10 @@ _Avoid_: Result, Issue, Violation.
 The URL of the response a Finding was actually judged on, when redirects made it differ from the target the user typed. A Finding stays keyed by the typed target; the Final URL is reported alongside it only when the two differ, so a reader can see that `https://a` was judged on `https://b/login`. PathChecker Findings never carry one: a path probe is a separate request to the target's origin, and its Finding already names the probed path.
 _Avoid_: Redirect target, Effective URL — Final URL names the end of the chain that was judged, the same response Applicable and Transport are judged against.
 
+**Final Status**:
+The HTTP status code of the response a Finding was actually judged on, reported only when it is not `2xx`. A sibling of Final URL: both describe the response the scan actually saw, independently of the typed target and the Finding's own Status (header-level pass/missing/weak/etc.). Set independently for the plain scan response and the CORS-probe response, same as Final URL. PathChecker Findings never carry one — a path probe's own status code is already named in its message — and neither do `error` Findings, since no response was ever judged. Purely informational: it never participates in `-fail-on` gating.
+_Avoid_: Error page, HTTP error — Final Status is not itself an error signal, just the status code of whatever response was judged; a 401/404/500 judged response can still carry an otherwise-passing Status.
+
 **Status**:
 Where a Finding landed after a Checker ran: `pass` (present and effective), `missing` (absent or blank), `weak` (present but a known no-op value), `exposed` (a PathChecker's probed path was confirmed reachable), `insecure` (the judged response arrived over plain HTTP), `error` (the scan itself failed, e.g. an unreachable target).
 _Avoid_: Result, Outcome.

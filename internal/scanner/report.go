@@ -85,6 +85,24 @@ func distinctFinalURLs(fs []Finding) []string {
 	return finals
 }
 
+// distinctStatusCodes returns the non-zero StatusCode values among fs, each
+// once, in first-encountered order. Same rationale as distinctFinalURLs: the
+// plain scan response and the CORS-probe response are judged independently
+// (see setStatusCode in scan.go) and can in principle land on different
+// status codes.
+func distinctStatusCodes(fs []Finding) []int {
+	var codes []int
+	seen := map[int]bool{}
+	for _, f := range fs {
+		if f.StatusCode == 0 || seen[f.StatusCode] {
+			continue
+		}
+		seen[f.StatusCode] = true
+		codes = append(codes, f.StatusCode)
+	}
+	return codes
+}
+
 // TerminalReporter renders findings as human-readable text. Color is opt-in
 // rather than inferred from the writer, since the decision of whether the
 // destination is an interactive terminal (and whether NO_COLOR is set)
@@ -110,6 +128,11 @@ func (t TerminalReporter) Report(findings []Finding, w io.Writer) error {
 		}
 		for _, final := range distinctFinalURLs(byURL[url]) {
 			if _, err := fmt.Fprintf(w, "  → redirected to %s\n", final); err != nil {
+				return err
+			}
+		}
+		for _, code := range distinctStatusCodes(byURL[url]) {
+			if _, err := fmt.Fprintf(w, "  → responded %d\n", code); err != nil {
 				return err
 			}
 		}

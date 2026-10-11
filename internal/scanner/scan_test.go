@@ -364,6 +364,117 @@ func TestScanFinalURLIsIndependentPerProbe(t *testing.T) {
 	}
 }
 
+// TestScanSetsStatusCodeOnlyWhenTheScanResponseIsNon2xx drives
+// TransportChecker (a plain, non-OriginProber Checker judged on the scan
+// response) through a non-2xx and a 2xx target, per the Final Status
+// glossary entry (CONTEXT.md): StatusCode is set to the judged response's
+// status code only when it is not 2xx.
+func TestScanSetsStatusCodeOnlyWhenTheScanResponseIsNon2xx(t *testing.T) {
+	t.Run("non-2xx target carries StatusCode", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		t.Cleanup(srv.Close)
+
+		findings := scanner.Scan(t.Context(), srv.Client(), []scanner.Checker{scanner.TransportChecker{}}, nil, nil, []string{srv.URL}, 1, nil)
+		if len(findings) != 1 {
+			t.Fatalf("Scan() returned %d findings, want 1: %+v", len(findings), findings)
+		}
+		if f := findings[0]; f.StatusCode != http.StatusNotFound {
+			t.Errorf("StatusCode = %d, want %d", f.StatusCode, http.StatusNotFound)
+		}
+	})
+
+	t.Run("2xx target carries no StatusCode", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		t.Cleanup(srv.Close)
+
+		findings := scanner.Scan(t.Context(), srv.Client(), []scanner.Checker{scanner.TransportChecker{}}, nil, nil, []string{srv.URL}, 1, nil)
+		if len(findings) != 1 {
+			t.Fatalf("Scan() returned %d findings, want 1: %+v", len(findings), findings)
+		}
+		if f := findings[0]; f.StatusCode != 0 {
+			t.Errorf("StatusCode = %d, want 0 (2xx response)", f.StatusCode)
+		}
+	})
+}
+
+// TestScanPathCheckerFindingsNeverCarryStatusCode covers the acceptance
+// criterion that a non-2xx scan response still leaves PathChecker Findings
+// without a StatusCode: a path probe is a separate request to the target's
+// origin, judged by its own CheckStatus logic, never stamped by setStatusCode.
+func TestScanPathCheckerFindingsNeverCarryStatusCode(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			// Only the scan request (against the target's root) is non-2xx;
+			// the path-checker probes below hit this same origin directly
+			// and must not be affected by it, or the exposure baseline check
+			// (which expects 404) would misfire.
+			w.WriteHeader(http.StatusForbidden)
+		case "/.env":
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	findings := scanner.Scan(t.Context(), srv.Client(), nil, nil, scanner.PathCheckersFor(true, nil), []string{srv.URL}, 1, nil)
+
+	var exposed []scanner.Finding
+	for _, f := range findings {
+		if f.Status == scanner.StatusExposed {
+			exposed = append(exposed, f)
+		}
+	}
+	if len(exposed) != 1 || exposed[0].Header != ".env" {
+		t.Fatalf("exposed findings = %+v, want exactly one for .env", exposed)
+	}
+	if exposed[0].StatusCode != 0 {
+		t.Errorf("StatusCode = %d, want 0: a PathChecker Finding never carries one", exposed[0].StatusCode)
+	}
+}
+
+// TestScanStatusCodeIsIndependentPerProbe covers the acceptance criterion
+// that the plain scan response and the CORS probe response are each judged
+// for StatusCode independently: here only the probe response is non-2xx, so
+// only the CORSChecker Finding (an OriginProber judged on the probe
+// response) carries StatusCode.
+func TestScanStatusCodeIsIndependentPerProbe(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Origin") != "" {
+			w.Header().Set("Access-Control-Allow-Origin", scanner.CORSProbeOrigin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+	}))
+	t.Cleanup(srv.Close)
+
+	findings := scanner.Scan(t.Context(), srv.Client(), []scanner.Checker{scanner.ContentTypeOptionsChecker{}, scanner.CORSChecker{}}, nil, nil, []string{srv.URL}, 1, nil)
+
+	var plain, cors *scanner.Finding
+	for i := range findings {
+		switch findings[i].Header {
+		case "X-Content-Type-Options":
+			plain = &findings[i]
+		case "Access-Control-Allow-Origin":
+			cors = &findings[i]
+		}
+	}
+	if plain == nil || cors == nil {
+		t.Fatalf("got findings %+v, want one X-Content-Type-Options and one Access-Control-Allow-Origin finding", findings)
+	}
+	if plain.StatusCode != 0 {
+		t.Errorf("plain finding StatusCode = %d, want 0: its own response was 2xx", plain.StatusCode)
+	}
+	if cors.StatusCode != http.StatusUnauthorized {
+		t.Errorf("CORS finding StatusCode = %d, want %d: judged against the non-2xx probe response", cors.StatusCode, http.StatusUnauthorized)
+	}
+}
+
 func TestScanSkipsBodyFetchWhenNoBodyCheckersConfigured(t *testing.T) {
 	var gotMethod string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -466,6 +577,9 @@ func TestScanUnreachableTargetYieldsErrorFinding(t *testing.T) {
 	}
 	if f.FinalURL != "" {
 		t.Errorf("FinalURL = %q, want empty: the fetch itself failed, no response was ever judged", f.FinalURL)
+	}
+	if f.StatusCode != 0 {
+		t.Errorf("StatusCode = %d, want 0: the fetch itself failed, no response was ever judged", f.StatusCode)
 	}
 }
 
