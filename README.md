@@ -101,10 +101,11 @@ all (`error`) always fails, regardless of threshold. When the gate trips,
 `mamori` exits `1` without an extra error line, since the report above has
 already shown which finding is responsible — unless a Hook also failed (see
 Hooks below), in which case that takes priority and `mamori` exits `3`
-instead. Any other error (a bad flag, an unreadable or invalid config file,
-no resolvable targets, or a failure writing the report) exits `2`, with a
-"mamori: ..." stderr line describing the problem. A caller (e.g. CI) can
-tell these apart from the exit code alone, without parsing stderr.
+instead, or the scan was interrupted (see Interrupts below), which outranks
+both and exits `4`. Any other error (a bad flag, an unreadable or invalid
+config file, no resolvable targets, or a failure writing the report) exits
+`2`, with a "mamori: ..." stderr line describing the problem. A caller (e.g.
+CI) can tell these apart from the exit code alone, without parsing stderr.
 
 Because the transport itself is judged by default (see above), any
 `http://` target — or an `https://` target that redirects down to `http://`
@@ -192,6 +193,23 @@ findings also trip `-fail-on`, mamori exits `3`, not `1` — the Hook failure
 is the more unusual, actionable problem, so it isn't silently replaced by
 the routine fail-on exit code. With no hooks configured, no subprocess is
 spawned and no hook timeout is enforced.
+
+Sending SIGINT (e.g. Ctrl-C) or SIGTERM (e.g. from a CI runner stopping the
+job) cancels every in-flight and not-yet-started request the scan itself is
+making — the plain checks, the CORS/Origin probe, and every
+`-check-exposed-paths` probe — so each affected target produces a single
+`error` finding with the message `scan interrupted`; any target whose
+request had already completed keeps its real findings untouched. The report
+is still written in full, in whichever `-o` format was selected, and
+`-post-scan-hook` still gets to run (bounded only by `-hook-timeout`, as
+always) so a WAF `-pre-scan-hook` disabled is reliably re-enabled even when
+the scan itself didn't finish. An interrupted scan exits `4`, outranking a
+Hook failure or a tripped `-fail-on` gate even if either also happens on the
+same run, and prints its own "mamori: ..." stderr line. A second SIGINT or
+SIGTERM — most likely sent while `-post-scan-hook` is still running — kills
+mamori immediately instead of being caught again. An interrupt arriving
+during `-pre-scan-hook` is unaffected by any of this: it's an ordinary Hook
+failure, exiting `3` as it always has.
 
 ### Environment variables
 

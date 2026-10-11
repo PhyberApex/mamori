@@ -60,6 +60,10 @@ _Avoid_: Baselined, Existing, Old — Known says what the reader needs (this was
 A user-supplied shell command mamori runs once per whole scan invocation — not per target — for side effects outside its own request/response cycle, e.g. disabling a WAF before scanning and re-enabling it after. `PreScanHook` runs before any target is scanned and aborts the scan if it fails; `PostScanHook` runs after the scan completes regardless of the scan's own outcome, as long as `PreScanHook` succeeded or wasn't configured. Both are bound by their own `HookTimeout`, distinct from the per-request `Timeout`.
 _Avoid_: Plugin, Callback — a Hook is a single, user-owned command mamori shells out to, not an in-process extension point.
 
+**Interrupt**:
+A SIGINT or SIGTERM mamori receives mid-scan, treated identically. It cancels the context driving the scan's own requests — not the Hooks, which stay bound only by their `HookTimeout` regardless — so any target whose request was in flight or hadn't started yet produces exactly one `error` Finding with the message `scan interrupted`, while a target that had already finished keeps its real Findings untouched. Default OS signal disposition is restored the instant the first Interrupt is handled, so a second one — most likely to land while `PostScanHook` is still running — kills the process outright instead of being caught again. An Interrupt outranks a Hook failure the same way a Hook failure outranks `-fail-on`.
+_Avoid_: Cancellation, Shutdown — Interrupt names the specific SIGINT/SIGTERM event, not a generic abort.
+
 **Rate**:
 The most requests per second mamori sends to any one host, evenly spaced with no burst, counting every request of a scan — the scan request, the CORS probe and each PathChecker probe. Unset means unlimited. Time spent waiting for the Rate does not count against the per-request `Timeout`, so a low Rate slows a scan down but never turns a queued request into an `error` Finding.
 _Avoid_: Throttle, Delay — Rate is a ceiling per host, not a pause between requests; Workers bounds how many targets are in flight, not how fast one host is hit.
