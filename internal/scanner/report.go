@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 )
 
 type Reporter interface {
@@ -110,6 +111,11 @@ func distinctStatusCodes(fs []Finding) []int {
 // cmd/mamori/main.go for the equivalent precedent on the input side.
 type TerminalReporter struct {
 	Color bool
+	// FailOn is the configured -fail-on threshold, needed to render the
+	// summary line's verdict clause. It is threaded in outside Report's own
+	// signature the same way SarifReporter.BaselineSupplied is — see that
+	// field's doc comment for the rationale.
+	FailOn Severity
 }
 
 func (t TerminalReporter) Report(findings []Finding, w io.Writer) error {
@@ -164,5 +170,77 @@ func (t TerminalReporter) Report(findings []Finding, w io.Writer) error {
 			}
 		}
 	}
-	return nil
+
+	_, err := fmt.Fprintf(w, "\n%s\n", summaryLine(findings, len(urls), t.FailOn))
+	return err
+}
+
+// summaryStatuses lists the Statuses a summary line counts, and the fixed
+// order their clauses render in. StatusPass is deliberately excluded — a
+// summary exists to draw attention to what needs attention, not to restate a
+// clean result the per-target blocks above already show.
+var summaryStatuses = []Status{StatusInsecure, StatusMissing, StatusWeak, StatusExposed, StatusError}
+
+// summaryLine renders the one-line scan summary that follows the last
+// target's block: a target count, then whichever of the status / known-
+// suppressed / fail-on clauses have something to show, joined by " · ".
+// Status and known/suppressed counts are independent tallies over the same
+// Finding set rather than a partition — a Finding counted under one status
+// clause is counted again under known/suppressed if it carries either flag —
+// so every clause here can be read on its own without cross-checking the
+// others. A clause is omitted entirely once its own count(s) are all zero.
+func summaryLine(findings []Finding, targetCount int, failOn Severity) string {
+	parts := []string{fmt.Sprintf("%d target%s", targetCount, pluralSuffix(targetCount))}
+
+	statusCounts := map[Status]int{}
+	var known, suppressed int
+	for _, f := range findings {
+		statusCounts[f.Status]++
+		if f.Known {
+			known++
+		}
+		if f.Suppressed {
+			suppressed++
+		}
+	}
+
+	var statusClauses []string
+	for _, s := range summaryStatuses {
+		if c := statusCounts[s]; c > 0 {
+			statusClauses = append(statusClauses, fmt.Sprintf("%d %s", c, s))
+		}
+	}
+	if len(statusClauses) > 0 {
+		parts = append(parts, strings.Join(statusClauses, ", "))
+	}
+
+	var knownSuppressed []string
+	if known > 0 {
+		knownSuppressed = append(knownSuppressed, fmt.Sprintf("%d known", known))
+	}
+	if suppressed > 0 {
+		knownSuppressed = append(knownSuppressed, fmt.Sprintf("%d suppressed", suppressed))
+	}
+	if len(knownSuppressed) > 0 {
+		parts = append(parts, strings.Join(knownSuppressed, ", "))
+	}
+
+	if failOn != "" {
+		verdict := "passed"
+		if AnyFails(findings, failOn) {
+			verdict = "failed"
+		}
+		parts = append(parts, fmt.Sprintf("fail-on %s: %s", failOn, verdict))
+	}
+
+	return strings.Join(parts, " · ")
+}
+
+// pluralSuffix returns "s" unless n is exactly 1, so callers can render an
+// English count ("1 target" / "2 targets") without a branch of their own.
+func pluralSuffix(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }

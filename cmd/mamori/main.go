@@ -211,7 +211,8 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 // selecting a strategy is a small interface plus a switch at the edge. It
 // takes the whole Config, not just cfg.Output, because SarifReporter also
 // needs to know whether a -baseline was supplied (see
-// SarifReporter.BaselineSupplied).
+// SarifReporter.BaselineSupplied) and TerminalReporter needs the -fail-on
+// threshold to render its summary line's verdict clause.
 func reporterFor(cfg config.Config, out io.Writer) scanner.Reporter {
 	switch cfg.Output {
 	case config.OutputJSON:
@@ -219,6 +220,6 @@ func reporterFor(cfg config.Config, out io.Writer) scanner.Reporter {
 	case config.OutputSarif:
 		return scanner.SarifReporter{BaselineSupplied: cfg.BaselinePath != ""}
 	default:
-		return scanner.TerminalReporter{Color: colorEnabled(out)}
+		return scanner.TerminalReporter{Color: colorEnabled(out), FailOn: cfg.FailOn}
 	}
 }
