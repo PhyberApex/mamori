@@ -163,7 +163,8 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 	}
 	client.Transport = scanner.NewUserAgentTransport(base, version)
 	pathCheckers := scanner.PathCheckersFor(cfg.CheckExposedPaths, cfg.ExtraExposedPaths)
-	findings := scanner.Scan(scanCtx, client, scanner.DefaultCheckers(), scanner.DefaultBodyCheckers(), pathCheckers, urls, cfg.Workers, http.Header(cfg.Headers))
+	tlsCheckers := scanner.DefaultTLSCheckers(time.Duration(cfg.CertExpiryDays) * 24 * time.Hour)
+	findings := scanner.Scan(scanCtx, client, scanner.DefaultCheckers(), scanner.DefaultBodyCheckers(), pathCheckers, tlsCheckers, urls, cfg.Workers, http.Header(cfg.Headers))
 	interrupted := scanCtx.Err() != nil
 	// Stop watching for signals the instant the scan phase ends, win or
 	// lose: the handler above is scoped to "around the scan phase" only, so

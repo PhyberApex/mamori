@@ -34,6 +34,7 @@ type fileConfig struct {
 	PostScanHook      *string  `yaml:"postScanHook"`
 	HookTimeout       *string  `yaml:"hookTimeout"`
 	Baseline          *string  `yaml:"baseline"`
+	CertExpiryDays    *int     `yaml:"certExpiryDays"`
 }
 
 // resolveConfigPath decides which config file, if any, supplies the config
@@ -123,6 +124,12 @@ func applyFileConfig(cfg *Config, fc fileConfig, path string) error {
 	}
 	if fc.Baseline != nil {
 		cfg.BaselinePath = *fc.Baseline
+	}
+	if fc.CertExpiryDays != nil {
+		if err := validateCertExpiryDays(*fc.CertExpiryDays); err != nil {
+			return fmt.Errorf("%s: certExpiryDays: %w", path, err)
+		}
+		cfg.CertExpiryDays = *fc.CertExpiryDays
 	}
 	if err := validateSuppressions(fc.Suppressions); err != nil {
 		return fmt.Errorf("%s: %w", path, err)
