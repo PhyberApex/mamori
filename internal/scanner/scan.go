@@ -134,6 +134,14 @@ func scanExposurePaths(ctx context.Context, client *http.Client, pathCheckers []
 
 	baselineStatus, err := probePathStatus(ctx, client, origin, randomExposureProbePath(), reqHeaders)
 	if err != nil || baselineStatus != http.StatusNotFound {
+		// Same interrupt-vs-genuine-failure distinction as scanTarget's own
+		// error branch: a canceled ctx here means the baseline probe was
+		// aborted by an interrupt, not that the target looked like a
+		// soft-404 catch-all, so it must get the literal "scan interrupted"
+		// message instead of the misleading skipped-check one.
+		if ctx.Err() != nil {
+			return []Finding{{Status: StatusError, Message: "scan interrupted"}}
+		}
 		return []Finding{{
 			Status:  StatusError,
 			Message: "sensitive-path exposure check skipped: target did not return 404 for a random nonexistent path, so its responses can't be trusted to tell an exposed path from a missing one",

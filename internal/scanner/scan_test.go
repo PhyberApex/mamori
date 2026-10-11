@@ -811,6 +811,43 @@ func TestScanSkipsExposureProbesWhenBaselineIsNotNotFound(t *testing.T) {
 	}
 }
 
+func TestScanExposureBaselineProbeCanceledContextYieldsInterruptedFinding(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			return
+		}
+		// Any other path is the randomized baseline probe: block it so the
+		// context can be canceled while it's in flight, same as the plain
+		// scanTarget request's own interrupted-request test above.
+		close(started)
+		<-release
+	}))
+	t.Cleanup(func() {
+		close(release)
+		srv.Close()
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-started
+		cancel()
+	}()
+
+	findings := scanner.Scan(ctx, srv.Client(), nil, nil, scanner.PathCheckersFor(true, nil), []string{srv.URL}, 1, nil)
+
+	var sawInterrupted bool
+	for _, f := range findings {
+		if f.Status == scanner.StatusError && f.Message == "scan interrupted" {
+			sawInterrupted = true
+		}
+	}
+	if !sawInterrupted {
+		t.Errorf("findings = %+v, want an error Finding with message %q for the canceled exposure-path baseline probe, not the generic \"check skipped\" message", findings, "scan interrupted")
+	}
+}
+
 func TestScanExposureProbesAreRootRelativeToTargetOrigin(t *testing.T) {
 	var mu sync.Mutex
 	var sawRootRelativeProbe bool
