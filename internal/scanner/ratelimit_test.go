@@ -16,17 +16,31 @@ import (
 // returns a canned 200 response, so tests can assert on request spacing
 // without a real server/network round trip in the mix.
 type recordingTransport struct {
-	mu    sync.Mutex
-	times []time.Time
-	hosts []string
+	mu         sync.Mutex
+	times      []time.Time
+	hosts      []string
+	userAgents []string
 }
 
 func (r *recordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	r.mu.Lock()
 	r.times = append(r.times, time.Now())
 	r.hosts = append(r.hosts, req.URL.Host)
+	r.userAgents = append(r.userAgents, req.Header.Get("User-Agent"))
 	r.mu.Unlock()
 	return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody, Header: http.Header{}}, nil
+}
+
+// lastUserAgent returns the User-Agent header of the most recent request
+// RoundTrip recorded, so tests can assert on it without reaching into the
+// slice directly.
+func (r *recordingTransport) lastUserAgent() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.userAgents) == 0 {
+		return ""
+	}
+	return r.userAgents[len(r.userAgents)-1]
 }
 
 func newRequest(t *testing.T, rawURL string) *http.Request {

@@ -143,6 +143,11 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 	}()
 
 	client := &http.Client{Timeout: cfg.Timeout}
+	// base is the RoundTripper beneath the User-Agent default: nil (meaning
+	// http.DefaultTransport) when -rate is unset, or a RateLimitedTransport
+	// when it's set, so the default User-Agent applies to every request
+	// either way.
+	var base http.RoundTripper
 	if cfg.Rate > 0 {
 		// client.Timeout alone can't be reused here: it starts counting
 		// from Do(), before the limiter even runs, so it would wrongly
@@ -154,8 +159,9 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 		// section), so this can't be collapsed into a single code path
 		// that behaves identically whether or not -rate is set.
 		client.Timeout = 0
-		client.Transport = scanner.NewRateLimitedTransport(nil, cfg.Rate, cfg.Timeout)
+		base = scanner.NewRateLimitedTransport(nil, cfg.Rate, cfg.Timeout)
 	}
+	client.Transport = scanner.NewUserAgentTransport(base, version)
 	pathCheckers := scanner.PathCheckersFor(cfg.CheckExposedPaths, cfg.ExtraExposedPaths)
 	findings := scanner.Scan(scanCtx, client, scanner.DefaultCheckers(), scanner.DefaultBodyCheckers(), pathCheckers, urls, cfg.Workers, http.Header(cfg.Headers))
 	interrupted := scanCtx.Err() != nil

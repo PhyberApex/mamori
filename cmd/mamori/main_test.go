@@ -486,6 +486,86 @@ func TestRunDefaultRateUnlimitedDoesNotDelayRequestsToSameHost(t *testing.T) {
 	}
 }
 
+func TestRunSendsDefaultUserAgentOnEveryRequest(t *testing.T) {
+	var mu sync.Mutex
+	var userAgents []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		userAgents = append(userAgents, r.Header.Get("User-Agent"))
+		mu.Unlock()
+	}))
+	t.Cleanup(srv.Close)
+
+	if err := run([]string{"-check-exposed-paths", srv.URL}, nil, io.Discard); err != nil {
+		t.Fatalf("run() returned error: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(userAgents) == 0 {
+		t.Fatal("server received no requests")
+	}
+	want := fmt.Sprintf("mamori/%s (+https://github.com/PhyberApex/mamori)", version)
+	for i, got := range userAgents {
+		if got != want {
+			t.Errorf("request %d User-Agent = %q, want %q", i, got, want)
+		}
+	}
+}
+
+func TestRunHeaderFlagOverridesDefaultUserAgent(t *testing.T) {
+	var mu sync.Mutex
+	var userAgents []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		userAgents = append(userAgents, r.Header.Get("User-Agent"))
+		mu.Unlock()
+	}))
+	t.Cleanup(srv.Close)
+
+	if err := run([]string{"-H", "User-Agent: something-else", srv.URL}, nil, io.Discard); err != nil {
+		t.Fatalf("run() returned error: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(userAgents) == 0 {
+		t.Fatal("server received no requests")
+	}
+	for i, got := range userAgents {
+		if got != "something-else" {
+			t.Errorf("request %d User-Agent = %q, want %q (explicit -H override must win)", i, got, "something-else")
+		}
+	}
+}
+
+func TestRunRateFlagStillSendsDefaultUserAgent(t *testing.T) {
+	var mu sync.Mutex
+	var userAgents []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		userAgents = append(userAgents, r.Header.Get("User-Agent"))
+		mu.Unlock()
+	}))
+	t.Cleanup(srv.Close)
+
+	if err := run([]string{"-rate", "1000", srv.URL}, nil, io.Discard); err != nil {
+		t.Fatalf("run() returned error: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(userAgents) == 0 {
+		t.Fatal("server received no requests")
+	}
+	want := fmt.Sprintf("mamori/%s (+https://github.com/PhyberApex/mamori)", version)
+	for i, got := range userAgents {
+		if got != want {
+			t.Errorf("request %d User-Agent = %q, want %q (default User-Agent must still apply with -rate set)", i, got, want)
+		}
+	}
+}
+
 func TestRunRejectsNegativeRateFlag(t *testing.T) {
 	if err := run([]string{"-rate", "-1", "https://a.example"}, nil, io.Discard); err == nil {
 		t.Error("run() with -rate -1 returned nil error, want error")
