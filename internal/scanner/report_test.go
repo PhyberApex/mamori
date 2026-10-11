@@ -211,6 +211,65 @@ func TestTerminalReporterShowsRedirectLineUnderTargetHeader(t *testing.T) {
 	}
 }
 
+func TestTerminalReporterShowsRespondedLineUnderTargetHeader(t *testing.T) {
+	findings := []scanner.Finding{
+		{
+			URL:        "https://a.example",
+			Header:     "Transport",
+			Status:     scanner.StatusPass,
+			Severity:   scanner.SeverityHigh,
+			StatusCode: 404,
+		},
+		{
+			URL:        "https://a.example",
+			Header:     "X-Frame-Options",
+			Status:     scanner.StatusMissing,
+			Severity:   scanner.SeverityMedium,
+			StatusCode: 404,
+		},
+		{
+			URL:      "https://c.example",
+			Header:   "X-Frame-Options",
+			Status:   scanner.StatusMissing,
+			Severity: scanner.SeverityMedium,
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.TerminalReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+	lines := strings.Split(buf.String(), "\n")
+
+	urlIdx, respondedIdx, xfoIdx := -1, -1, -1
+	for i, line := range lines {
+		switch {
+		case strings.Contains(line, "https://a.example") && urlIdx == -1:
+			urlIdx = i
+		case strings.Contains(line, "responded 404") && respondedIdx == -1:
+			respondedIdx = i
+		case strings.Contains(line, "X-Frame-Options") && xfoIdx == -1:
+			xfoIdx = i
+		}
+	}
+	if urlIdx == -1 || respondedIdx == -1 || xfoIdx == -1 {
+		t.Fatalf("missing expected lines\noutput:\n%s", buf.String())
+	}
+	if urlIdx >= respondedIdx || respondedIdx >= xfoIdx {
+		t.Errorf("want responded line directly under the target header and before its findings\noutput:\n%s", buf.String())
+	}
+
+	if strings.Count(buf.String(), "responded") != 1 {
+		t.Errorf("want exactly one responded line (both findings share the same StatusCode)\noutput:\n%s", buf.String())
+	}
+	if idx := strings.Index(buf.String(), "https://c.example"); idx != -1 {
+		rest := buf.String()[idx:]
+		if strings.Contains(rest, "responded") {
+			t.Errorf("2xx target should have no responded line\noutput:\n%s", buf.String())
+		}
+	}
+}
+
 func TestTerminalReporterShowsErrorMessage(t *testing.T) {
 	findings := []scanner.Finding{
 		{
@@ -630,6 +689,50 @@ func TestJSONReporterCarriesFinalURLAndOmitsItOtherwise(t *testing.T) {
 	}
 	if _, present := withoutFinalURL["finalUrl"]; present {
 		t.Errorf("finding with no final URL has a %q key, want it omitted", "finalUrl")
+	}
+}
+
+func TestJSONReporterCarriesStatusCodeAndOmitsItOtherwise(t *testing.T) {
+	findings := []scanner.Finding{
+		{
+			URL:        "https://a.example",
+			Header:     "Transport",
+			Status:     scanner.StatusPass,
+			Severity:   scanner.SeverityHigh,
+			StatusCode: 404,
+		},
+		{
+			URL:      "https://a.example",
+			Header:   "X-Frame-Options",
+			Status:   scanner.StatusMissing,
+			Severity: scanner.SeverityMedium,
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.JSONReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("got %d lines, want one per finding (2)\noutput:\n%s", len(lines), buf.String())
+	}
+
+	var withStatusCode map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &withStatusCode); err != nil {
+		t.Fatalf("line 1 is not valid JSON: %v\nline: %s", err, lines[0])
+	}
+	if withStatusCode["statusCode"] != float64(404) {
+		t.Errorf("statusCode = %v, want %v", withStatusCode["statusCode"], 404)
+	}
+
+	var withoutStatusCode map[string]any
+	if err := json.Unmarshal([]byte(lines[1]), &withoutStatusCode); err != nil {
+		t.Fatalf("line 2 is not valid JSON: %v\nline: %s", err, lines[1])
+	}
+	if _, present := withoutStatusCode["statusCode"]; present {
+		t.Errorf("finding with no status code has a %q key, want it omitted", "statusCode")
 	}
 }
 

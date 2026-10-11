@@ -62,6 +62,10 @@ type sarifResult struct {
 // zero-value struct is never "empty" to encoding/json, only a nil pointer is.
 type sarifProperties struct {
 	FinalURL string `json:"finalUrl,omitempty"`
+	// StatusCode carries Finding.StatusCode (see the Final Status glossary
+	// entry, CONTEXT.md), under the same omitempty/inclusion rule as
+	// FinalURL above.
+	StatusCode int `json:"statusCode,omitempty"`
 }
 
 // sarifSuppression represents a suppressed result via SARIF's native
@@ -207,8 +211,8 @@ func sarifRuleAndResult(f Finding) (sarifRule, sarifResult) {
 	if f.Suppressed {
 		result.Suppressions = []sarifSuppression{{Kind: sarifSuppressionExternal, Justification: f.SuppressedReason}}
 	}
-	if f.FinalURL != "" {
-		result.Properties = &sarifProperties{FinalURL: f.FinalURL}
+	if f.FinalURL != "" || f.StatusCode != 0 {
+		result.Properties = &sarifProperties{FinalURL: f.FinalURL, StatusCode: f.StatusCode}
 	}
 	return rule, result
 }

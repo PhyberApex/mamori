@@ -106,6 +106,11 @@ type Finding struct {
 	// non-redirecting target's JSON byte-identical to before this field
 	// existed.
 	FinalURL string `json:"finalUrl,omitempty"`
+	// StatusCode is the HTTP status code of the response this Finding was
+	// actually judged on, set only when it is not 2xx — see the Final
+	// Status glossary entry in CONTEXT.md. omitempty keeps a target whose
+	// judged response is 2xx byte-identical to before this field existed.
+	StatusCode int `json:"statusCode,omitempty"`
 	// Suppressed records whether a config-file Suppression matched this
 	// Finding. It is orthogonal to Status: a suppressed Finding keeps
 	// whatever Status/Severity it already had, so existing JSON consumers

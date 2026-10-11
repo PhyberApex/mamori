@@ -196,6 +196,18 @@ func TestFindingFails(t *testing.T) {
 			threshold: scanner.SeverityLow,
 			want:      false,
 		},
+		{
+			name:      "pass with a non-2xx StatusCode never fails: StatusCode is purely informational",
+			finding:   scanner.Finding{Status: scanner.StatusPass, Severity: scanner.SeverityHigh, StatusCode: 401},
+			threshold: scanner.SeverityLow,
+			want:      false,
+		},
+		{
+			name:      "error with a StatusCode still fails unconditionally, same as any other error",
+			finding:   scanner.Finding{Status: scanner.StatusError, Severity: scanner.SeverityLow, StatusCode: 500},
+			threshold: scanner.SeverityHigh,
+			want:      true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
