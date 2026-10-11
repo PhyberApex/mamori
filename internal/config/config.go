@@ -29,10 +29,11 @@ const (
 )
 
 const (
-	defaultWorkers     = 10
-	defaultTimeout     = 10 * time.Second
-	defaultOutput      = OutputTerminal
-	defaultHookTimeout = 30 * time.Second
+	defaultWorkers        = 10
+	defaultTimeout        = 10 * time.Second
+	defaultOutput         = OutputTerminal
+	defaultHookTimeout    = 30 * time.Second
+	defaultCertExpiryDays = 30
 )
 
 type Config struct {
@@ -100,6 +101,12 @@ type Config struct {
 	// fails config loading rather than scanning. The zero value (nil) is
 	// already the correct default: no baseline, nothing is ever Known.
 	Baseline []scanner.Finding
+	// CertExpiryDays is the resolved -cert-expiry-days/MAMORI_CERT_EXPIRY_DAYS/
+	// certExpiryDays setting: how many days out CertExpiryChecker treats a
+	// leaf certificate's expiry as a finding. Unlike CheckExposedPaths, the
+	// checker itself is always on — this only tunes its threshold — so
+	// there's no separate enable flag/field.
+	CertExpiryDays int
 }
 
 // Headers is http.Header under the flag package's Value contract: a defined
@@ -247,6 +254,17 @@ func validateHookTimeout(d time.Duration) error {
 	return nil
 }
 
+// validateCertExpiryDays reports whether n satisfies the "positive integer"
+// rule the config-file, env, and flag layers all enforce for
+// -cert-expiry-days, mirroring validateWorkers: a zero or negative threshold
+// has no sensible meaning here, unlike -rate's "0 means unlimited" sentinel.
+func validateCertExpiryDays(n int) error {
+	if n < 1 {
+		return fmt.Errorf("%d is not a positive integer", n)
+	}
+	return nil
+}
+
 // validateSuppressions reports whether every entry in suppressions sets at
 // least one of Header or Host — an entry setting neither is a config error,
 // not a silent no-op, since suppressions has no flag/env layer to fall back
@@ -293,6 +311,7 @@ func registerFlags(cfg *Config) (*flag.FlagSet, *string) {
 	fs.StringVar(&cfg.PostScanHook, "post-scan-hook", cfg.PostScanHook, "shell command to run once after the scan completes")
 	fs.DurationVar(&cfg.HookTimeout, "hook-timeout", cfg.HookTimeout, "timeout for -pre-scan-hook/-post-scan-hook (e.g. 30s)")
 	fs.StringVar(&cfg.BaselinePath, "baseline", cfg.BaselinePath, "path to a previously saved -o json scan (NDJSON); findings matching one by URL, header, and status are marked known and exempt from -fail-on")
+	fs.IntVar(&cfg.CertExpiryDays, "cert-expiry-days", cfg.CertExpiryDays, "flag a target's TLS certificate as expiring once it's within this many days of its expiry")
 	var configPath string
 	fs.StringVar(&configPath, "config", "", "path to YAML config file (env MAMORI_CONFIG; default: .mamori.yaml in the working directory if present)")
 	return fs, &configPath
@@ -303,7 +322,7 @@ func registerFlags(cfg *Config) (*flag.FlagSet, *string) {
 // process state. The env-resolved values are used as the flag defaults,
 // which encodes the precedence chain and makes -h show effective defaults.
 func Resolve(args []string, getenv func(string) string) (Config, []string, error) {
-	cfg := Config{Workers: defaultWorkers, Timeout: defaultTimeout, Output: defaultOutput, HookTimeout: defaultHookTimeout}
+	cfg := Config{Workers: defaultWorkers, Timeout: defaultTimeout, Output: defaultOutput, HookTimeout: defaultHookTimeout, CertExpiryDays: defaultCertExpiryDays}
 
 	fileTargets, err := loadConfigLayer(&cfg, args, getenv)
 	if err != nil {
@@ -366,6 +385,13 @@ func Resolve(args []string, getenv func(string) string) (Config, []string, error
 	if v := getenv("MAMORI_BASELINE"); v != "" {
 		cfg.BaselinePath = v
 	}
+	if v := getenv("MAMORI_CERT_EXPIRY_DAYS"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || validateCertExpiryDays(n) != nil {
+			return Config{}, nil, fmt.Errorf("MAMORI_CERT_EXPIRY_DAYS: %q is not a positive integer", v)
+		}
+		cfg.CertExpiryDays = n
+	}
 
 	fs, _ := registerFlags(&cfg)
 	if err := fs.Parse(args); err != nil {
@@ -385,6 +411,9 @@ func Resolve(args []string, getenv func(string) string) (Config, []string, error
 	}
 	if err := validateHookTimeout(cfg.HookTimeout); err != nil {
 		return Config{}, nil, fmt.Errorf("-hook-timeout: %w", err)
+	}
+	if err := validateCertExpiryDays(cfg.CertExpiryDays); err != nil {
+		return Config{}, nil, fmt.Errorf("-cert-expiry-days: %w", err)
 	}
 	if cfg.BaselinePath != "" {
 		baseline, err := scanner.LoadBaseline(cfg.BaselinePath)

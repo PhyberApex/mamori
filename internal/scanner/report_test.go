@@ -3,6 +3,7 @@ package scanner_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -572,6 +573,159 @@ func TestTerminalReporterShowsBothKnownAndSuppressedTags(t *testing.T) {
 	}
 	if !strings.Contains(line, "[KNOWN]") || !strings.Contains(line, "[SUPPRESSED]") {
 		t.Errorf("line = %q, want both [KNOWN] and [SUPPRESSED]", line)
+	}
+}
+
+func TestTerminalReporterSummaryLineForSingleTargetWithMissingAndPass(t *testing.T) {
+	findings := []scanner.Finding{
+		{URL: "https://a.example", Header: "Strict-Transport-Security", Status: scanner.StatusMissing, Severity: scanner.SeverityHigh},
+		{URL: "https://a.example", Header: "X-Content-Type-Options", Status: scanner.StatusPass, Severity: scanner.SeverityMedium},
+		{URL: "https://a.example", Header: "X-Frame-Options", Status: scanner.StatusMissing, Severity: scanner.SeverityMedium},
+		{URL: "https://a.example", Header: "Content-Security-Policy", Status: scanner.StatusMissing, Severity: scanner.SeverityHigh},
+		{URL: "https://a.example", Header: "Referrer-Policy", Status: scanner.StatusMissing, Severity: scanner.SeverityLow},
+		{URL: "https://a.example", Header: "Cross-Origin-Resource-Policy", Status: scanner.StatusMissing, Severity: scanner.SeverityMedium},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.TerminalReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	want := "\n1 target · 5 missing\n"
+	if !strings.HasSuffix(buf.String(), want) {
+		t.Errorf("Report() output = %q, want it to end with %q", buf.String(), want)
+	}
+}
+
+func TestTerminalReporterSummaryLineCountsStatusesKnownSuppressedAndFailOnVerdict(t *testing.T) {
+	var findings []scanner.Finding
+	urls := make([]string, 12)
+	for i := range urls {
+		urls[i] = fmt.Sprintf("https://target%d.example", i)
+	}
+	add := func(url string, status scanner.Status, severity scanner.Severity, known, suppressed bool) {
+		findings = append(findings, scanner.Finding{
+			URL:        url,
+			Header:     "X-Test-Header",
+			Status:     status,
+			Severity:   severity,
+			Known:      known,
+			Suppressed: suppressed,
+		})
+	}
+	for i := 0; i < 3; i++ {
+		add(urls[i], scanner.StatusInsecure, scanner.SeverityHigh, false, false)
+	}
+	for i := 0; i < 18; i++ {
+		add(urls[i%12], scanner.StatusMissing, scanner.SeverityMedium, false, false)
+	}
+	for i := 0; i < 4; i++ {
+		add(urls[i], scanner.StatusWeak, scanner.SeverityHigh, false, false)
+	}
+	// Mark 2 of the above findings Known and 1 Suppressed, independent of status.
+	findings[0].Known = true
+	findings[1].Known = true
+	findings[2].Suppressed = true
+
+	var buf bytes.Buffer
+	if err := (scanner.TerminalReporter{FailOn: scanner.SeverityMedium}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	want := "\n12 targets · 3 insecure, 18 missing, 4 weak · 2 known, 1 suppressed · fail-on medium: failed\n"
+	if !strings.HasSuffix(buf.String(), want) {
+		t.Errorf("Report() output = %q, want it to end with %q", buf.String(), want)
+	}
+}
+
+func TestTerminalReporterSummaryLineFailOnPassedVerdict(t *testing.T) {
+	findings := []scanner.Finding{
+		// A Known finding never trips the fail-on gate (see Finding.Fails),
+		// so nothing in this scan is above threshold even though its
+		// severity alone would otherwise qualify.
+		{URL: "https://a.example", Header: "X-Frame-Options", Status: scanner.StatusMissing, Severity: scanner.SeverityLow, Known: true},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.TerminalReporter{FailOn: scanner.SeverityLow}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	want := "fail-on low: passed\n"
+	if !strings.HasSuffix(buf.String(), want) {
+		t.Errorf("Report() output = %q, want it to end with %q", buf.String(), want)
+	}
+}
+
+func TestTerminalReporterSummaryLineOmitsFailOnClauseWhenNoThresholdConfigured(t *testing.T) {
+	findings := []scanner.Finding{
+		{URL: "https://a.example", Header: "X-Frame-Options", Status: scanner.StatusMissing, Severity: scanner.SeverityHigh},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.TerminalReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	if strings.Contains(buf.String(), "fail-on") {
+		t.Errorf("Report() output = %q, want no fail-on clause when no threshold is configured", buf.String())
+	}
+	want := "\n1 target · 1 missing\n"
+	if !strings.HasSuffix(buf.String(), want) {
+		t.Errorf("Report() output = %q, want it to end with %q", buf.String(), want)
+	}
+}
+
+func TestTerminalReporterSummaryLineIsJustTargetCountWhenEverythingPasses(t *testing.T) {
+	findings := []scanner.Finding{
+		{URL: "https://a.example", Header: "X-Frame-Options", Status: scanner.StatusPass, Severity: scanner.SeverityHigh},
+		{URL: "https://b.example", Header: "X-Frame-Options", Status: scanner.StatusPass, Severity: scanner.SeverityHigh},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.TerminalReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	want := "\n2 targets\n"
+	if !strings.HasSuffix(buf.String(), want) {
+		t.Errorf("Report() output = %q, want it to end with %q", buf.String(), want)
+	}
+	if strings.HasSuffix(strings.TrimSuffix(buf.String(), "\n"), "·") {
+		t.Errorf("Report() output = %q, want no trailing middle dot", buf.String())
+	}
+}
+
+func TestTerminalReporterSummaryLineCountsKnownFindingInItsStatusToo(t *testing.T) {
+	findings := []scanner.Finding{
+		{URL: "https://a.example", Header: "Content-Security-Policy", Status: scanner.StatusMissing, Severity: scanner.SeverityHigh, Known: true},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.TerminalReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	want := "\n1 target · 1 missing · 1 known\n"
+	if !strings.HasSuffix(buf.String(), want) {
+		t.Errorf("Report() output = %q, want it to end with %q", buf.String(), want)
+	}
+}
+
+func TestTerminalReporterSummaryLineHasNoAnsiEscapes(t *testing.T) {
+	findings := []scanner.Finding{
+		{URL: "https://a.example", Header: "X-Frame-Options", Status: scanner.StatusMissing, Severity: scanner.SeverityHigh},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.TerminalReporter{Color: true, FailOn: scanner.SeverityLow}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	summary := lines[len(lines)-1]
+	if strings.Contains(summary, "\x1b[") {
+		t.Errorf("summary line = %q, want no ANSI escapes even with Color enabled", summary)
 	}
 }
 

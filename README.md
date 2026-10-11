@@ -61,7 +61,19 @@ https://example.com
   [MISSING] Content-Security-Policy (high) → https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html
   [MISSING] Referrer-Policy (low) → https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html#referrer-policy
   [MISSING] Cross-Origin-Resource-Policy (medium) → https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cross-Origin-Resource-Policy
+
+1 target · 5 missing
 ```
+
+The terminal report always ends with this one-line summary: a target count,
+then a clause per non-`pass` status present (`insecure`, `missing`, `weak`,
+`exposed`, `error`, in that order, each omitted at a zero count), then a
+`known`/`suppressed` clause tallying those two independent flags across every
+finding, then — only when `-fail-on` is set to something other than `none` —
+`fail-on <threshold>: passed` or `failed`, mirroring the exit-code gate
+described below. Any clause with nothing to show is omitted entirely, so a
+scan with no non-pass findings and no `-fail-on` prints just the target
+count. `-o json` and `-o sarif` are unaffected — the summary is terminal-only.
 
 Full reference for every check mamori performs is available at
 [phyberapex.github.io/mamori](https://phyberapex.github.io/mamori/).
@@ -83,6 +95,7 @@ Full reference for every check mamori performs is available at
 | `-post-scan-hook` | *(none)* | shell command to run once after the scan completes |
 | `-hook-timeout` | `30s` | timeout for `-pre-scan-hook`/`-post-scan-hook` |
 | `-baseline` | *(none)* | path to a previously saved `-o json` scan (NDJSON); matching findings are marked known and exempt from `-fail-on` |
+| `-cert-expiry-days` | `30` | flag a target's TLS certificate as expiring once it's within this many days of its expiry |
 | `-v`, `-version` | `false` | print the version and exit, performing no scan |
 
 `-o json` emits newline-delimited JSON, one finding per line.
@@ -160,6 +173,17 @@ origin; if the target doesn't answer that with `404`, it's treated as
 unreliable for this check (e.g. a catch-all/soft-404 server) and mamori
 reports a single error for that target instead of probing anything else.
 
+Every HTTPS target's leaf certificate is checked for expiry, on by default:
+once its expiry is within `-cert-expiry-days` (default `30`) of now, the
+finding (`TLS (certificate)`) is `insecure` at `medium` severity; otherwise
+`pass`. Unlike `-check-exposed-paths`, there's no flag to turn this checker
+off — it reads TLS state mamori already has from the scan's own request, no
+extra request — only `-cert-expiry-days` tunes its threshold. A plain-HTTP
+target, or one that redirects down to plain HTTP, produces no finding from
+this checker at all (TransportChecker's own finding already covers it), and
+an already-expired certificate never reaches it either: Go's HTTP client
+refuses the handshake first, surfacing as the existing `error` finding.
+
 `-baseline` points at a previously saved scan — exactly `-o json`'s own
 output, NDJSON, one `Finding` per line — and marks every current finding with
 an exactly matching `url`, `header`, and `status` as known: `known: true` in
@@ -236,6 +260,7 @@ precedence.
 | `MAMORI_POST_SCAN_HOOK` | `-post-scan-hook` |
 | `MAMORI_HOOK_TIMEOUT` | `-hook-timeout` |
 | `MAMORI_BASELINE` | `-baseline` |
+| `MAMORI_CERT_EXPIRY_DAYS` | `-cert-expiry-days` |
 
 `-exposed-path` has no environment variable equivalent, the same as `-H`.
 
@@ -265,6 +290,7 @@ preScanHook: ./disable-waf.sh
 postScanHook: ./enable-waf.sh
 hookTimeout: 30s
 baseline: ./previous-scan.json
+certExpiryDays: 30
 ```
 
 Select a file explicitly with `-config <path>` or `MAMORI_CONFIG=<path>`. If
