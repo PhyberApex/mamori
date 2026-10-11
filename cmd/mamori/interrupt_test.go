@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -36,30 +37,33 @@ func blockingServer(t *testing.T) (url string, started <-chan struct{}) {
 	return srv.URL, startedCh
 }
 
-// sendSelfSIGINTAfter sends SIGINT to this test process itself once ready
-// fires, returning a channel carrying any error from the send. Safe only
-// because by construction ready never fires before run()'s own
+// runInterrupted runs run() with args, sending this test process SIGINT once
+// started fires (see blockingServer) and draining the resulting signal-send
+// error, so each test only has to assert on run()'s own return value. Safe
+// only because by construction started never fires before run()'s own
 // signal.NotifyContext (installed just before the scan phase) is already
 // registered — see blockingServer, whose handler can't be reached before
 // that request is actually sent.
-func sendSelfSIGINTAfter(ready <-chan struct{}) <-chan error {
-	errCh := make(chan error, 1)
+func runInterrupted(t *testing.T, started <-chan struct{}, args []string, out io.Writer) error {
+	t.Helper()
+	sigErr := make(chan error, 1)
 	go func() {
-		<-ready
-		errCh <- syscall.Kill(os.Getpid(), syscall.SIGINT)
+		<-started
+		sigErr <- syscall.Kill(os.Getpid(), syscall.SIGINT)
 	}()
-	return errCh
+
+	err := run(args, nil, out)
+	if sendErr := <-sigErr; sendErr != nil {
+		t.Fatalf("sending SIGINT to self: %v", sendErr)
+	}
+	return err
 }
 
 func TestRunInterruptedMidScanExitsViaErrInterrupted(t *testing.T) {
 	url, started := blockingServer(t)
-	sigErr := sendSelfSIGINTAfter(started)
 
 	var buf bytes.Buffer
-	err := run([]string{"-o", "json", url}, nil, &buf)
-	if sendErr := <-sigErr; sendErr != nil {
-		t.Fatalf("sending SIGINT to self: %v", sendErr)
-	}
+	err := runInterrupted(t, started, []string{"-o", "json", url}, &buf)
 	if !errors.Is(err, errInterrupted) {
 		t.Fatalf("run() returned %v, want errInterrupted", err)
 	}
@@ -77,15 +81,11 @@ func TestRunInterruptedMidScanExitsViaErrInterrupted(t *testing.T) {
 func TestRunInterruptedPartialReportKeepsCompletedTargetsFindings(t *testing.T) {
 	completed := headerServer(t, strongHeaders())
 	blocked, started := blockingServer(t)
-	sigErr := sendSelfSIGINTAfter(started)
 
 	var buf bytes.Buffer
 	// -workers 1 makes Scan process targets in input order, so completed
 	// finishes before blocked's request is even dispatched.
-	err := run([]string{"-workers", "1", "-o", "json", completed, blocked}, nil, &buf)
-	if sendErr := <-sigErr; sendErr != nil {
-		t.Fatalf("sending SIGINT to self: %v", sendErr)
-	}
+	err := runInterrupted(t, started, []string{"-workers", "1", "-o", "json", completed, blocked}, &buf)
 	if !errors.Is(err, errInterrupted) {
 		t.Fatalf("run() returned %v, want errInterrupted", err)
 	}
@@ -113,13 +113,9 @@ func TestRunInterruptedPartialReportKeepsCompletedTargetsFindings(t *testing.T) 
 
 func TestRunInterruptedStillRunsPostScanHook(t *testing.T) {
 	url, started := blockingServer(t)
-	sigErr := sendSelfSIGINTAfter(started)
 
 	outPath := filepath.Join(t.TempDir(), "ran.txt")
-	err := run([]string{"-post-scan-hook", "touch " + outPath, url}, nil, io.Discard)
-	if sendErr := <-sigErr; sendErr != nil {
-		t.Fatalf("sending SIGINT to self: %v", sendErr)
-	}
+	err := runInterrupted(t, started, []string{"-post-scan-hook", "touch " + outPath, url}, io.Discard)
 	if !errors.Is(err, errInterrupted) {
 		t.Fatalf("run() returned %v, want errInterrupted", err)
 	}
@@ -130,12 +126,8 @@ func TestRunInterruptedStillRunsPostScanHook(t *testing.T) {
 
 func TestRunInterruptedTakesPriorityOverPostScanHookFailure(t *testing.T) {
 	url, started := blockingServer(t)
-	sigErr := sendSelfSIGINTAfter(started)
 
-	err := run([]string{"-post-scan-hook", "exit 1", url}, nil, io.Discard)
-	if sendErr := <-sigErr; sendErr != nil {
-		t.Fatalf("sending SIGINT to self: %v", sendErr)
-	}
+	err := runInterrupted(t, started, []string{"-post-scan-hook", "exit 1", url}, io.Discard)
 	if errors.Is(err, errHookFailed) {
 		t.Error("run() returned errHookFailed, want errInterrupted to take priority")
 	}
@@ -149,12 +141,8 @@ func TestRunInterruptedTakesPriorityOverFailOn(t *testing.T) {
 	// -fail-on regardless of threshold, so this alone already proves
 	// -fail-on would fire here if errInterrupted didn't take priority.
 	url, started := blockingServer(t)
-	sigErr := sendSelfSIGINTAfter(started)
 
-	err := run([]string{"-fail-on", "high", url}, nil, io.Discard)
-	if sendErr := <-sigErr; sendErr != nil {
-		t.Fatalf("sending SIGINT to self: %v", sendErr)
-	}
+	err := runInterrupted(t, started, []string{"-fail-on", "high", url}, io.Discard)
 	if errors.Is(err, errFailThreshold) {
 		t.Error("run() returned errFailThreshold, want errInterrupted to take priority")
 	}
@@ -181,13 +169,20 @@ func TestRunSecondSignalDuringPostScanHookKillsProcessImmediately(t *testing.T) 
 
 	url, started := blockingServer(t)
 
-	hookStarted := filepath.Join(t.TempDir(), "hook-started")
+	// The hook's own stdout/stderr are routed to mamori's stderr (see
+	// runHook), so "hook-started" landing on the subprocess's stderr is a
+	// blocking, sleep-free signal that -post-scan-hook has actually begun —
+	// the cross-process equivalent of waiting on a channel.
 	//nolint:gosec // G204: binPath and the hook command are entirely test-constructed, not attacker-controlled input
 	cmd := exec.CommandContext(ctx, binPath,
-		"-post-scan-hook", "touch "+hookStarted+" && sleep 30",
+		"-post-scan-hook", "echo hook-started && sleep 30",
 		"-hook-timeout", "60s",
 		url,
 	)
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		t.Fatalf("getting subprocess stderr pipe: %v", err)
+	}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("starting subprocess: %v", err)
 	}
@@ -201,7 +196,21 @@ func TestRunSecondSignalDuringPostScanHookKillsProcessImmediately(t *testing.T) 
 		t.Fatalf("sending first SIGINT: %v", err)
 	}
 
-	waitForFile(t, hookStarted, 10*time.Second)
+	hookStarted := make(chan struct{})
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			if scanner.Text() == "hook-started" {
+				close(hookStarted)
+				return
+			}
+		}
+	}()
+	select {
+	case <-hookStarted:
+	case <-time.After(10 * time.Second):
+		t.Fatal("subprocess's post-scan hook never started")
+	}
 	if err := cmd.Process.Signal(syscall.SIGINT); err != nil {
 		t.Fatalf("sending second SIGINT: %v", err)
 	}
@@ -222,16 +231,4 @@ func TestRunSecondSignalDuringPostScanHookKillsProcessImmediately(t *testing.T) 
 		_ = cmd.Process.Kill()
 		t.Fatal("subprocess did not exit promptly after the second SIGINT, want it killed immediately instead of waiting out the 30s hook")
 	}
-}
-
-func waitForFile(t *testing.T, path string, timeout time.Duration) {
-	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(path); err == nil {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for %s to appear", path)
 }

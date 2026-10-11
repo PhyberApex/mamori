@@ -176,9 +176,12 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 	if err := reporterFor(cfg, out).Report(findings, out); err != nil {
 		return err
 	}
-	// An interrupted scan outranks everything below: the Hook above and
-	// -fail-on are both routine, expected conditions, while an interrupt is
-	// the more unusual one the caller most needs to know distinctly.
+	// An interrupted scan outranks even a hookErr from the post-scan Hook
+	// above: unlike the hookErr-vs-fail-on choice below, which picks the
+	// more actionable of two routine conditions, an interrupt means the
+	// *caller* cut the run short, which is the more unusual fact here and
+	// the one most worth surfacing distinctly, even at the cost of masking
+	// a Hook failure's own detail.
 	if interrupted {
 		return errInterrupted
 	}
