@@ -31,6 +31,7 @@ func DefaultCheckers() []Checker {
 		COEPChecker{},
 		CORPChecker{},
 		CookieChecker{},
+		CacheControlChecker{},
 		PermissionsPolicyChecker{},
 		BannerDisclosureChecker{},
 		CORSChecker{},
@@ -524,6 +525,76 @@ func cookieFindings(cookie *http.Cookie) []Finding {
 		})
 	}
 	return findings
+}
+
+// CacheControlChecker judges the Cache-Control header, but only on a response
+// that declares at least one non-blank Set-Cookie header: Cache-Control has
+// no bearing on cookie safety unless there's a cookie to cache alongside, so
+// a response that never sets one has nothing for this Checker to judge. This
+// gate replaces the Document check every other conditional Checker in this
+// file uses — a cookie-setting JSON API response is judged exactly like a
+// cookie-setting HTML page. Pragma and Expires are never read: neither has
+// any bearing on this Checker's Status.
+type CacheControlChecker struct{}
+
+// Check does not delegate to checkValue: checkValue flags a Finding weak as
+// soon as any one occurrence is weak, which is right for headers where more
+// occurrences can only narrow protection. Here it's the opposite — a cookie
+// response with multiple Cache-Control occurrences is safe as soon as any
+// one of them includes no-store/private, regardless of what the others say
+// (acceptance criterion #6 of the originating issue).
+func (CacheControlChecker) Check(headers http.Header, _ *url.URL) []Finding {
+	if firstNonBlankValue(headers, "Set-Cookie") == "" {
+		return nil
+	}
+
+	var lastNonBlankValue string
+	for _, value := range headers.Values("Cache-Control") {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		lastNonBlankValue = value
+		if cacheControlPasses(value) {
+			return []Finding{{
+				Header:    "Cache-Control",
+				Status:    StatusPass,
+				Severity:  SeverityMedium,
+				Reference: cookieReference,
+			}}
+		}
+	}
+
+	if lastNonBlankValue == "" {
+		return []Finding{{
+			Header:    "Cache-Control",
+			Status:    StatusMissing,
+			Severity:  SeverityMedium,
+			Reference: cookieReference,
+		}}
+	}
+	return []Finding{{
+		Header:    "Cache-Control",
+		Status:    StatusWeak,
+		Severity:  SeverityMedium,
+		Reference: cookieReference,
+		Message:   fmt.Sprintf("%q does not include no-store or private, so a shared cache may store this cookie-bearing response", lastNonBlankValue),
+	}}
+}
+
+// cacheControlPasses reports whether value's comma-separated directive list
+// contains no-store and/or private, case-insensitively and
+// whitespace-trimmed — the only directives that keep a shared cache from
+// storing a cookie-bearing response.
+func cacheControlPasses(value string) bool {
+	for _, directive := range strings.Split(value, ",") {
+		name, _, _ := strings.Cut(strings.TrimSpace(directive), "=")
+		switch strings.ToLower(strings.TrimSpace(name)) {
+		case "no-store", "private":
+			return true
+		}
+	}
+	return false
 }
 
 type PermissionsPolicyChecker struct{}
