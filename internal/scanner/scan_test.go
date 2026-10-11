@@ -1,6 +1,7 @@
 package scanner_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -489,6 +490,28 @@ func TestScanServerTimeoutYieldsErrorFinding(t *testing.T) {
 	}
 	if f.Message == "" {
 		t.Error("Message is empty, want the timeout failure message")
+	}
+}
+
+func TestScanCanceledContextYieldsInterruptedFinding(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	t.Cleanup(srv.Close)
+
+	// Canceled up front rather than mid-flight: either way the request never
+	// completes, and this is the deterministic way to force that.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	findings := scanner.Scan(ctx, http.DefaultClient, scanner.DefaultCheckers(), nil, nil, []string{srv.URL}, 1, nil)
+	if len(findings) != 1 {
+		t.Fatalf("Scan() returned %d findings, want 1 error finding", len(findings))
+	}
+	f := findings[0]
+	if f.Status != scanner.StatusError {
+		t.Errorf("status = %q, want %q", f.Status, scanner.StatusError)
+	}
+	if f.Message != "scan interrupted" {
+		t.Errorf("Message = %q, want the literal %q, got request error text instead", "scan interrupted", f.Message)
 	}
 }
 

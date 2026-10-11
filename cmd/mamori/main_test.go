@@ -795,6 +795,22 @@ func TestExitCodeHookFailedTakesPriorityOverFailThreshold(t *testing.T) {
 	}
 }
 
+func TestExitCodeInterruptedIsFour(t *testing.T) {
+	if got := exitCode(errInterrupted); got != 4 {
+		t.Errorf("exitCode(errInterrupted) = %d, want 4", got)
+	}
+}
+
+func TestExitCodeInterruptedTakesPriorityOverHookFailedAndFailThreshold(t *testing.T) {
+	// run() never actually returns an error wrapping all three sentinels at
+	// once, but exitCode must still prefer the interrupted bucket if it ever
+	// did, matching run()'s own priority.
+	err := fmt.Errorf("%w: %w: %w", errInterrupted, errHookFailed, errFailThreshold)
+	if got := exitCode(err); got != 4 {
+		t.Errorf("exitCode() = %d, want 4 when errInterrupted, errHookFailed, and errFailThreshold are all present", got)
+	}
+}
+
 func TestRunFailOnFlagOverridesEnvVar(t *testing.T) {
 	url := headerServer(t, nil)
 	t.Setenv("MAMORI_FAIL_ON", "low")

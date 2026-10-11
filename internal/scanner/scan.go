@@ -73,6 +73,15 @@ func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, bo
 		}
 	}
 	if err != nil {
+		// ctx (not the request's own derived context — see
+		// RateLimitedTransport) is only ever canceled by the signal handler
+		// run() installs around the scan phase, so its being done here means
+		// this request was aborted by an interrupt rather than failing on
+		// its own merits; that gets the literal "scan interrupted" message
+		// instead of the request error's own text.
+		if ctx.Err() != nil {
+			return []Finding{{URL: targetURL, Status: StatusError, Message: "scan interrupted"}}
+		}
 		return []Finding{{URL: targetURL, Status: StatusError, Message: err.Error()}}
 	}
 
