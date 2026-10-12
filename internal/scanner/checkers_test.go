@@ -693,6 +693,113 @@ func TestCookieCheckerEvaluatesMultipleCookiesIndependently(t *testing.T) {
 	}
 }
 
+func TestCacheControlCheckerNoSetCookieProducesNoFindings(t *testing.T) {
+	tests := []struct {
+		name    string
+		headers http.Header
+	}{
+		{"no headers at all", http.Header{}},
+		{"Cache-Control present, no Set-Cookie", http.Header{"Cache-Control": {"public"}}},
+		{"blank Set-Cookie occurrence", http.Header{"Set-Cookie": {""}}},
+		{"blank Set-Cookie occurrence with Cache-Control", http.Header{
+			"Set-Cookie":    {""},
+			"Cache-Control": {"no-store"},
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			findings := scanner.CacheControlChecker{}.Check(tt.headers, testURL)
+			if len(findings) != 0 {
+				t.Errorf("Check() returned %d findings, want 0: %+v", len(findings), findings)
+			}
+		})
+	}
+}
+
+func TestCacheControlCheckerMissingWithCookie(t *testing.T) {
+	findings := scanner.CacheControlChecker{}.Check(http.Header{
+		"Set-Cookie": {"session=abc"},
+	}, testURL)
+	if len(findings) != 1 {
+		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
+	}
+	if findings[0].Header != "Cache-Control" {
+		t.Errorf("Header = %q, want %q", findings[0].Header, "Cache-Control")
+	}
+	if findings[0].Status != scanner.StatusMissing {
+		t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusMissing)
+	}
+	if findings[0].Severity != scanner.SeverityMedium {
+		t.Errorf("Severity = %q, want %q", findings[0].Severity, scanner.SeverityMedium)
+	}
+}
+
+func TestCacheControlCheckerPassValues(t *testing.T) {
+	tests := []string{"no-store", "no-store, max-age=0"}
+	for _, value := range tests {
+		t.Run(value, func(t *testing.T) {
+			findings := scanner.CacheControlChecker{}.Check(http.Header{
+				"Set-Cookie":    {"session=abc"},
+				"Cache-Control": {value},
+			}, testURL)
+			if len(findings) != 1 {
+				t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
+			}
+			if findings[0].Status != scanner.StatusPass {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
+			}
+		})
+	}
+}
+
+func TestCacheControlCheckerWeakValues(t *testing.T) {
+	tests := []string{"public, max-age=3600", "no-cache", "max-age=0", "public", "private", "max-age=0, private"}
+	for _, value := range tests {
+		t.Run(value, func(t *testing.T) {
+			findings := scanner.CacheControlChecker{}.Check(http.Header{
+				"Set-Cookie":    {"session=abc"},
+				"Cache-Control": {value},
+			}, testURL)
+			if len(findings) != 1 {
+				t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
+			}
+			if findings[0].Status != scanner.StatusWeak {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+			}
+			if findings[0].Severity != scanner.SeverityMedium {
+				t.Errorf("Severity = %q, want %q", findings[0].Severity, scanner.SeverityMedium)
+			}
+		})
+	}
+}
+
+func TestCacheControlCheckerPassesIfAnyOccurrenceIsStrong(t *testing.T) {
+	findings := scanner.CacheControlChecker{}.Check(http.Header{
+		"Set-Cookie":    {"session=abc"},
+		"Cache-Control": {"public", "no-store"},
+	}, testURL)
+	if len(findings) != 1 {
+		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
+	}
+	if findings[0].Status != scanner.StatusPass {
+		t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
+	}
+}
+
+func TestCacheControlCheckerIgnoresPragmaAndExpires(t *testing.T) {
+	findings := scanner.CacheControlChecker{}.Check(http.Header{
+		"Set-Cookie": {"session=abc"},
+		"Pragma":     {"no-cache"},
+		"Expires":    {"Wed, 21 Oct 2015 07:28:00 GMT"},
+	}, testURL)
+	if len(findings) != 1 {
+		t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
+	}
+	if findings[0].Status != scanner.StatusMissing {
+		t.Errorf("Status = %q, want %q (Pragma/Expires must not affect Status)", findings[0].Status, scanner.StatusMissing)
+	}
+}
+
 func TestReferrerPolicyAcceptsFallbackListEndingStrong(t *testing.T) {
 	// The reverse order: an unsafe-url earlier in the list is overridden by
 	// a later recognized, safe token — that's the effective policy applied.
