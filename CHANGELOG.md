@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.2.0](https://github.com/PhyberApex/mamori/compare/v1.1.0...v1.2.0) (2026-10-12)
+
+
+### Features
+
+* add official GitHub Action distribution ([#111](https://github.com/PhyberApex/mamori/issues/111)) ([64370d5](https://github.com/PhyberApex/mamori/commit/64370d5c3382682574ad4ce05c81748bb37ea866))
+* **cli:** exit 3 for a Hook failure, taking priority over -fail-on ([#108](https://github.com/PhyberApex/mamori/issues/108)) ([221746f](https://github.com/PhyberApex/mamori/commit/221746f3268de23dcf0cab37a3582325611e7e28)), closes [#99](https://github.com/PhyberApex/mamori/issues/99)
+* **config:** add pre-scan/post-scan shell command hooks ([#88](https://github.com/PhyberApex/mamori/issues/88)) ([8017dcd](https://github.com/PhyberApex/mamori/commit/8017dcd56c1c3c16f57ecfcde5094ca800612f17))
+* run post-scan Hook and report partial findings on SIGINT/SIGTERM ([#124](https://github.com/PhyberApex/mamori/issues/124)) ([eefa5c4](https://github.com/PhyberApex/mamori/commit/eefa5c4c23f6471f13c093ad92d35221178774d2))
+* **scanner:** -baseline flag marks recurring findings as Known ([#113](https://github.com/PhyberApex/mamori/issues/113)) ([5b8cf31](https://github.com/PhyberApex/mamori/commit/5b8cf310829a28baef0a8c9d8d3b60d3c5fad64c)), closes [#103](https://github.com/PhyberApex/mamori/issues/103)
+* **scanner:** add -rate flag for per-host request throttling ([#114](https://github.com/PhyberApex/mamori/issues/114)) ([e200bab](https://github.com/PhyberApex/mamori/commit/e200bab8b54a74bbc07caefaf70a9d8b3dde109b)), closes [#104](https://github.com/PhyberApex/mamori/issues/104)
+* **scanner:** add Cache-Control checker gated on a declared Set-Cookie ([#127](https://github.com/PhyberApex/mamori/issues/127)) ([efa9361](https://github.com/PhyberApex/mamori/commit/efa936115a9ee4abf895da8bdf232965f27f306d))
+* **scanner:** add default-on Transport checker for plain-HTTP responses ([#97](https://github.com/PhyberApex/mamori/issues/97)) ([f1e1b98](https://github.com/PhyberApex/mamori/commit/f1e1b98874851c341a4c0633669cfc764581c92a))
+* **scanner:** add one-line scan summary to terminal report ([#128](https://github.com/PhyberApex/mamori/issues/128)) ([4bc552d](https://github.com/PhyberApex/mamori/commit/4bc552dd021fc95a6ec35d7eb1bf499aa263aa7d))
+* **scanner:** add opt-in sensitive-path exposure checker ([#87](https://github.com/PhyberApex/mamori/issues/87)) ([1897919](https://github.com/PhyberApex/mamori/commit/18979198e973e4497a449d3612331fd560218735))
+* **scanner:** add suppressions config to mark accepted-risk Findings ([#84](https://github.com/PhyberApex/mamori/issues/84)) ([f27e67c](https://github.com/PhyberApex/mamori/commit/f27e67cd89d2ad56fd44f7fc36d595103ce00632)), closes [#59](https://github.com/PhyberApex/mamori/issues/59)
+* **scanner:** add TLSChecker category with a certificate-expiry checker ([#129](https://github.com/PhyberApex/mamori/issues/129)) ([5ad2735](https://github.com/PhyberApex/mamori/commit/5ad2735d45f9c49205058d483cfb7f879534e0f5)), closes [#122](https://github.com/PhyberApex/mamori/issues/122)
+* **scanner:** document-only header Checkers skip non-Document responses ([#115](https://github.com/PhyberApex/mamori/issues/115)) ([75d4f0c](https://github.com/PhyberApex/mamori/commit/75d4f0cc3da9432e301e27dac99d59150572ee1b)), closes [#105](https://github.com/PhyberApex/mamori/issues/105)
+* **scanner:** Finding carries a Final Status for non-2xx judged responses ([#126](https://github.com/PhyberApex/mamori/issues/126)) ([10aa5c7](https://github.com/PhyberApex/mamori/commit/10aa5c755d22e59e4bd11d9592c5dfa445b08e5f)), closes [#119](https://github.com/PhyberApex/mamori/issues/119)
+* **scanner:** Finding carries a Final URL when a redirect changed it ([#110](https://github.com/PhyberApex/mamori/issues/110)) ([71f2fb2](https://github.com/PhyberApex/mamori/commit/71f2fb29a37f00fefc11f1da186e93acd892105c))
+* **scanner:** HSTSChecker emits no Finding for plain-HTTP responses ([#95](https://github.com/PhyberApex/mamori/issues/95)) ([979fba6](https://github.com/PhyberApex/mamori/commit/979fba6657b3740511df98eb551f9f75e78fc786))
+* **scanner:** make TerminalReporter color conditional on tty and NO_COLOR ([#107](https://github.com/PhyberApex/mamori/issues/107)) ([9356b95](https://github.com/PhyberApex/mamori/commit/9356b9567b512586155d077c9695d24e83e48f5f)), closes [#98](https://github.com/PhyberApex/mamori/issues/98)
+* **scanner:** send a default User-Agent on every outbound request ([#125](https://github.com/PhyberApex/mamori/issues/125)) ([e08876a](https://github.com/PhyberApex/mamori/commit/e08876a9b56cc1068ae6c013e4d80204e35888f5)), closes [#118](https://github.com/PhyberApex/mamori/issues/118)
+* **scanner:** suppression carries a reason and an expiry date ([#109](https://github.com/PhyberApex/mamori/issues/109)) ([b10bfff](https://github.com/PhyberApex/mamori/commit/b10bfffd699bdbf613e838c2d6fa456fd537933f))
+
+
+### Bug Fixes
+
+* **deps:** update module golang.org/x/net to v0.59.0 ([#90](https://github.com/PhyberApex/mamori/issues/90)) ([986673c](https://github.com/PhyberApex/mamori/commit/986673c0516bc70a917f68617de2333ac7fc212c))
+
 ## [1.1.0](https://github.com/PhyberApex/mamori/compare/v1.0.0...v1.1.0) (2026-08-26)
 
 
