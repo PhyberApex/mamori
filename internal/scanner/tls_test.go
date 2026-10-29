@@ -3,6 +3,7 @@ package scanner_test
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"net/url"
 	"testing"
 	"time"
@@ -64,6 +65,25 @@ func TestCertExpiryCheckerCheck(t *testing.T) {
 		}
 		if f.Message == "" {
 			t.Error("Message is empty, want an explanation of the upcoming expiry")
+		}
+	})
+
+	t.Run("message states the threshold in days and the expiry in UTC", func(t *testing.T) {
+		zone := time.FixedZone("CET", 3600)
+		for _, tc := range []struct {
+			days int
+			unit string
+		}{{30, "days"}, {1, "day"}} {
+			notAfter := time.Now().Add(12 * time.Hour).In(zone).Truncate(time.Second)
+			state := &tls.ConnectionState{PeerCertificates: []*x509.Certificate{{NotAfter: notAfter}}}
+			findings := scanner.NewCertExpiryChecker(time.Duration(tc.days)*24*time.Hour).Check(state, respURL)
+			if len(findings) != 1 {
+				t.Fatalf("Check() returned %d findings, want 1", len(findings))
+			}
+			want := fmt.Sprintf("certificate expires %s, within the %d-%s threshold", notAfter.UTC().Format(time.RFC3339), tc.days, tc.unit)
+			if findings[0].Message != want {
+				t.Errorf("Message = %q, want %q", findings[0].Message, want)
+			}
 		}
 	})
 
