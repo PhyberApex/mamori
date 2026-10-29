@@ -756,7 +756,7 @@ func isDocument(headers http.Header) bool {
 
 func checkPresence(headers http.Header, name string, severity Severity, reference string) []Finding {
 	status := StatusPass
-	if strings.TrimSpace(headers.Get(name)) == "" {
+	if firstNonBlankValue(headers, name) == "" {
 		status = StatusMissing
 	}
 	return []Finding{{
@@ -773,14 +773,15 @@ func checkPresence(headers http.Header, name string, severity Severity, referenc
 // since "provides no protection" and "isn't set" are different findings.
 //
 // A misconfigured proxy or CDN can cause a header to appear more than once
-// in the same response; headers.Get only ever sees the first of those. We
-// validate every non-blank occurrence and flag the finding as soon as any
-// one of them is weak, rather than letting send order decide whether the
-// scan reports pass or weak. A blank occurrence (e.g. a stray empty
-// duplicate appended by some infra) is skipped rather than validated: it
-// carries no value of its own to judge, and treating "" as a value would
-// let it masquerade as a weak one, downgrading an otherwise strong header
-// on the strength of infra noise.
+// in the same response. checkPresence judges presence on the first non-blank
+// occurrence, and we then validate every non-blank occurrence and flag the
+// finding as soon as any one of them is weak, rather than letting send order
+// decide whether the scan reports pass or weak. A blank occurrence (e.g. a
+// stray empty duplicate appended by some infra), whether first or later, is
+// skipped rather than validated: it carries no value of its own to judge,
+// and treating "" as a value would let it masquerade as a weak one,
+// downgrading an otherwise strong header on the strength of infra noise.
+// The header is only missing when every occurrence is blank.
 func checkValue(headers http.Header, name string, severity Severity, reference string, validate func(value string) (weak bool, message string)) []Finding {
 	findings := checkPresence(headers, name, severity, reference)
 	if findings[0].Status != StatusPass {

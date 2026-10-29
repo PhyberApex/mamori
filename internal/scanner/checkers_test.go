@@ -216,6 +216,30 @@ func TestHSTSNotApplicableOverHTTP(t *testing.T) {
 	}
 }
 
+func TestPresenceJudgedOnFirstNonBlankOccurrence(t *testing.T) {
+	// A blank duplicate sent before the real value must not hide it.
+	tests := []struct {
+		name    string
+		checker scanner.Checker
+		headers http.Header
+		want    scanner.Status
+	}{
+		{"PermissionsPolicyBlankFirst", scanner.PermissionsPolicyChecker{}, http.Header{"Permissions-Policy": {"", "geolocation=()"}}, scanner.StatusPass},
+		{"FrameOptionsBlankFirst", scanner.FrameOptionsChecker{}, http.Header{"X-Frame-Options": {"", "DENY"}}, scanner.StatusPass},
+		{"FrameOptionsBlankFirstWeak", scanner.FrameOptionsChecker{}, http.Header{"X-Frame-Options": {"", "ALLOWALL"}}, scanner.StatusWeak},
+		{"PermissionsPolicyAllBlank", scanner.PermissionsPolicyChecker{}, http.Header{"Permissions-Policy": {"", "  "}}, scanner.StatusMissing},
+		{"FrameOptionsAllBlank", scanner.FrameOptionsChecker{}, http.Header{"X-Frame-Options": {"", ""}}, scanner.StatusMissing},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			findings := tt.checker.Check(tt.headers, testURL)
+			if findings[0].Status != tt.want {
+				t.Errorf("Status = %q, want %q", findings[0].Status, tt.want)
+			}
+		})
+	}
+}
+
 func TestCheckValueIgnoresBlankDuplicateOccurrence(t *testing.T) {
 	// Some infra appends a stray empty duplicate header instead of leaving
 	// the original alone. That blank occurrence carries no value to judge
