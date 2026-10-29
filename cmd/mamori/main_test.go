@@ -467,8 +467,12 @@ func TestRunRateFlagThrottlesRequestsToSameHost(t *testing.T) {
 	}
 	sort.Slice(times, func(i, j int) bool { return times[i].Before(times[j]) })
 	want := time.Second / time.Duration(rate)
-	if span := times[len(times)-1].Sub(times[0]); span < 3*want {
-		t.Errorf("span across 4 requests to the shared host = %v, want >= %v (3 intervals across 4 requests)", span, 3*want)
+	// Timestamps are taken in the server handler, not at send time, so
+	// scheduling jitter can shave a little off the span; allow half an
+	// interval of slack (an unthrottled run spans ~0).
+	min := 3*want - want/2
+	if span := times[len(times)-1].Sub(times[0]); span < min {
+		t.Errorf("span across 4 requests to the shared host = %v, want >= %v (3 intervals across 4 requests, minus jitter slack)", span, min)
 	}
 }
 
