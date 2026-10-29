@@ -533,3 +533,51 @@ func TestSarifReporterOmitsBaselineStateWhenNoBaselineSupplied(t *testing.T) {
 		t.Errorf("output contains baselineState, want it entirely absent when no baseline was supplied\noutput:\n%s", buf.String())
 	}
 }
+
+func TestSarifReporterDescribesCertificateFindingWithoutTransportWording(t *testing.T) {
+	findings := []scanner.Finding{
+		{URL: "https://a.example", Header: "TLS (certificate)", Status: scanner.StatusInsecure, Severity: scanner.SeverityMedium, Message: "certificate expires soon"},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.SarifReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	var doc struct {
+		Runs []struct {
+			Tool struct {
+				Driver struct {
+					Rules []struct {
+						ShortDescription struct {
+							Text string `json:"text"`
+						} `json:"shortDescription"`
+					} `json:"rules"`
+				} `json:"driver"`
+			} `json:"tool"`
+			Results []struct {
+				Message struct {
+					Text string `json:"text"`
+				} `json:"message"`
+			} `json:"results"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &doc); err != nil {
+		t.Fatalf("output is not valid JSON: %v\noutput:\n%s", err, buf.String())
+	}
+
+	desc := doc.Runs[0].Tool.Driver.Rules[0].ShortDescription.Text
+	msg := doc.Runs[0].Results[0].Message.Text
+	for _, text := range []string{desc, msg} {
+		lower := strings.ToLower(text)
+		if strings.Contains(lower, "transport") || strings.Contains(lower, "connection") || strings.Contains(lower, "scheme") {
+			t.Errorf("%q mentions transport/connection/scheme, but only the certificate is at issue", text)
+		}
+		if !strings.Contains(text, "TLS (certificate)") {
+			t.Errorf("%q should name the finding's Header", text)
+		}
+	}
+	if !strings.Contains(msg, "certificate expires soon") {
+		t.Errorf("message = %q, want it to include the finding's own message", msg)
+	}
+}
