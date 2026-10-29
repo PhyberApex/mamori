@@ -86,6 +86,8 @@ func TestHSTSWeakValues(t *testing.T) {
 		{"negative max-age", "max-age=-1"},
 		{"unparseable max-age", "max-age=notanumber"},
 		{"missing max-age directive", "includeSubDomains"},
+		{"quoted zero max-age", `max-age="0"`},
+		{"quoted unparseable max-age", `max-age="abc"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -155,6 +157,8 @@ func TestHSTSAcceptsValidMaxAge(t *testing.T) {
 		"max-age=63072000",
 		"max-age=63072000; includeSubDomains",
 		"includeSubDomains; max-age=63072000",
+		`max-age="31536000"`,
+		`max-age=" 31536000 "; includeSubDomains`,
 	}
 	for _, value := range tests {
 		t.Run(value, func(t *testing.T) {

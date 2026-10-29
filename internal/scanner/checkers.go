@@ -120,9 +120,11 @@ func hstsWeakness(value string) (weak bool, message string) {
 		if !found || !strings.EqualFold(strings.TrimSpace(name), "max-age") {
 			continue
 		}
-		maxAge, err := strconv.Atoi(strings.TrimSpace(val))
+		// RFC 6797 §6.1: directive values may be quoted strings.
+		val = strings.TrimSpace(strings.Trim(strings.TrimSpace(val), `"`))
+		maxAge, err := strconv.Atoi(val)
 		if err != nil {
-			return true, fmt.Sprintf("max-age=%s is unparseable", strings.TrimSpace(val))
+			return true, fmt.Sprintf("max-age=%s is unparseable", val)
 		}
 		if maxAge <= 0 {
 			return true, fmt.Sprintf("max-age=%d disables HSTS", maxAge)
