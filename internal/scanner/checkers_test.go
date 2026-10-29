@@ -545,7 +545,10 @@ func TestCSPWeakValues(t *testing.T) {
 		{"unsafe-inline in script-src", "default-src 'self'; script-src 'unsafe-inline'; object-src 'none'"},
 		{"unsafe-eval in script-src", "default-src 'self'; script-src 'unsafe-eval'; object-src 'none'"},
 		{"unsafe-inline case-insensitive", "default-src 'self'; script-src 'UNSAFE-INLINE'; object-src 'none'"},
-		{"bare wildcard source", "default-src 'self'; img-src *; object-src 'none'"},
+		{"bare wildcard in script-src", "default-src 'self'; script-src *; object-src 'none'"},
+		{"bare wildcard in default-src", "default-src *; object-src 'none'"},
+		{"unsafe-eval next to nonce", "default-src 'self'; script-src 'nonce-x' 'unsafe-eval'; object-src 'none'"},
+		{"unsafe-inline with nonce only in another directive", "default-src 'self'; script-src 'unsafe-inline'; style-src 'nonce-x'; object-src 'none'"},
 		{"missing object-src and default-src", "script-src 'self'"},
 	}
 	for _, tt := range tests {
@@ -578,6 +581,11 @@ func TestCSPAcceptsStrongValues(t *testing.T) {
 		"default-src 'self'",
 		"object-src 'none'; script-src 'self'",
 		"default-src 'self'; img-src https://*.example.com",
+		"default-src 'self'; script-src 'nonce-x' 'unsafe-inline'; object-src 'none'",
+		"default-src 'self'; style-src 'sha256-abc=' 'unsafe-inline'; object-src 'none'",
+		"default-src 'self'; script-src 'SHA384-abc=' 'unsafe-inline'; object-src 'none'",
+		"default-src 'self'; img-src *; object-src 'none'",
+		"default-src 'self'; font-src *",
 	}
 	for _, value := range tests {
 		t.Run(value, func(t *testing.T) {
