@@ -38,6 +38,10 @@ func runHook(ctx context.Context, command string, phase hookPhase, targets []str
 		return false, nil
 	}
 
+	if _, err := exec.LookPath("sh"); err != nil {
+		return true, fmt.Errorf("%w: %s-scan hook configured but no \"sh\" found on PATH (the container image has no shell, so hooks are unavailable there): %w", errHookFailed, phase, err)
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
