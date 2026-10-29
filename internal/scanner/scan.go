@@ -379,6 +379,12 @@ func applyHeaders(req *http.Request, reqHeaders http.Header) {
 		if len(v) == 0 {
 			continue
 		}
+		// net/http ignores a Host key in req.Header and sends req.Host
+		// instead, so -H 'Host: ...' must be applied there to take effect.
+		if http.CanonicalHeaderKey(k) == "Host" {
+			req.Host = v[0]
+			continue
+		}
 		req.Header.Set(k, v[0])
 	}
 }

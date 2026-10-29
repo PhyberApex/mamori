@@ -1255,3 +1255,19 @@ func TestScanExposurePathProbeCanceledContextYieldsInterruptedFinding(t *testing
 		t.Errorf("findings = %+v, want exactly one %q Finding for the canceled path probes", findings, "scan interrupted")
 	}
 }
+
+func TestScan_HostHeaderOverridesRequestHost(t *testing.T) {
+	var gotHost string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHost = r.Host
+	}))
+	t.Cleanup(srv.Close)
+
+	headers := http.Header{}
+	headers.Set("Host", "staging.example.com")
+	scanner.Scan(t.Context(), srv.Client(), []scanner.Checker{scanner.TransportChecker{}}, nil, nil, nil, []string{srv.URL}, 1, headers)
+
+	if gotHost != "staging.example.com" {
+		t.Errorf("server saw Host %q, want %q", gotHost, "staging.example.com")
+	}
+}
