@@ -1182,3 +1182,76 @@ func TestScanPathProbeDoesNotDownloadUnboundedBody(t *testing.T) {
 		t.Errorf("server wrote %d bytes before probe stopped reading, want a small bounded amount", got)
 	}
 }
+
+func TestScanCORSProbeCanceledContextYieldsInterruptedFinding(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Origin") == "" {
+			return
+		}
+		close(started)
+		<-release
+	}))
+	t.Cleanup(func() {
+		close(release)
+		srv.Close()
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-started
+		cancel()
+	}()
+
+	findings := scanner.Scan(ctx, srv.Client(), []scanner.Checker{scanner.CORSChecker{}}, nil, nil, nil, []string{srv.URL}, 1, nil)
+
+	var n int
+	for _, f := range findings {
+		if f.Status == scanner.StatusError && f.Message == "scan interrupted" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("findings = %+v, want exactly one %q Finding for the canceled CORS probe", findings, "scan interrupted")
+	}
+}
+
+func TestScanExposurePathProbeCanceledContextYieldsInterruptedFinding(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			return
+		case "/.env", "/.git/config":
+			once.Do(func() { close(started) })
+			<-release
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(func() {
+		close(release)
+		srv.Close()
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-started
+		cancel()
+	}()
+
+	findings := scanner.Scan(ctx, srv.Client(), nil, nil, scanner.PathCheckersFor(true, nil), nil, []string{srv.URL}, 1, nil)
+
+	var n int
+	for _, f := range findings {
+		if f.Status == scanner.StatusError && f.Message == "scan interrupted" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("findings = %+v, want exactly one %q Finding for the canceled path probes", findings, "scan interrupted")
+	}
+}

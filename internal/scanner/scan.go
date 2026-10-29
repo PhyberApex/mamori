@@ -118,7 +118,25 @@ func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, bo
 	for i := range findings {
 		findings[i].URL = targetURL
 	}
-	return findings
+	return appendInterruptedOnce(ctx, findings, targetURL)
+}
+
+// appendInterruptedOnce adds the "scan interrupted" error Finding when ctx
+// was canceled and findings doesn't already carry one. The CORS probe and the
+// per-path exposure probes skip a failed request silently, so without this a
+// target interrupted mid-probe would report its real Findings with no marker
+// that part of it was never judged. Non-cancellation probe failures stay
+// skipped.
+func appendInterruptedOnce(ctx context.Context, findings []Finding, targetURL string) []Finding {
+	if ctx.Err() == nil {
+		return findings
+	}
+	for _, f := range findings {
+		if f.Status == StatusError && f.Message == "scan interrupted" {
+			return findings
+		}
+	}
+	return append(findings, Finding{URL: targetURL, Status: StatusError, Message: "scan interrupted"})
 }
 
 // scanExposurePaths runs the sensitive-path exposure check for one target.
