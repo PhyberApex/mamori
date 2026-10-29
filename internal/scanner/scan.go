@@ -296,6 +296,10 @@ func fetchHeadersWithOrigin(ctx context.Context, client *http.Client, targetURL 
 // (script/link tags), so a truncated body still yields usable findings.
 const maxBodyBytes = 10 * 1024 * 1024 // 10 MiB
 
+// maxDrainBytes caps how much of a response body doRequest reads before
+// closing it, since only the status and headers are needed.
+const maxDrainBytes = 64 << 10 // 64 KiB
+
 // fetchBody always issues a GET, since body checkers need the body itself
 // and there's no cheaper request that would provide it.
 func fetchBody(ctx context.Context, client *http.Client, targetURL string, reqHeaders http.Header) (http.Header, *url.URL, int, *tls.ConnectionState, []byte, error) {
@@ -332,8 +336,11 @@ func doRequest(ctx context.Context, client *http.Client, method, targetURL strin
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	// Drain the body so the underlying TCP connection can be reused.
-	_, _ = io.Copy(io.Discard, resp.Body)
+	// Drain a small prefix of the body so the underlying TCP connection can
+	// be reused. Anything larger (an exposed backup.zip can be gigabytes) is
+	// abandoned: closing the body makes the transport drop the connection,
+	// which beats downloading the file just to read a status code.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxDrainBytes))
 
 	// resp.Request is not the request we built above — after client.Do
 	// follows any redirects, the standard library rewrites it to point at
