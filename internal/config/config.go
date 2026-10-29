@@ -329,11 +329,21 @@ func registerFlags(cfg *Config) (*flag.FlagSet, *string) {
 func Resolve(args []string, getenv func(string) string) (Config, []string, error) {
 	cfg := Config{Workers: defaultWorkers, Timeout: defaultTimeout, Output: defaultOutput, HookTimeout: defaultHookTimeout, CertExpiryDays: defaultCertExpiryDays}
 
-	fileTargets, err := loadConfigLayer(&cfg, args, getenv)
-	if err != nil {
-		return Config{}, nil, err
+	// -v and -h must not depend on the working directory's config file, so
+	// the file layer is skipped for them. -h still runs the real parse below
+	// so the usage text shows the effective defaults.
+	var fileTargets []string
+	version, help := prescanEarlyExit(args)
+	if version {
+		return Config{Version: true}, nil, nil
 	}
-
+	if !help {
+		var err error
+		fileTargets, err = loadConfigLayer(&cfg, args, getenv)
+		if err != nil {
+			return Config{}, nil, err
+		}
+	}
 	if v := getenv("MAMORI_WORKERS"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || validateWorkers(n) != nil {
