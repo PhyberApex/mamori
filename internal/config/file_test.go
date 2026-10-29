@@ -1,6 +1,8 @@
 package config_test
 
 import (
+	"errors"
+	"flag"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -546,5 +548,28 @@ func TestResolveConfigFileNormalisesAndRejectsEmptyExposedPaths(t *testing.T) {
 	path = writeConfigFile(t, t.TempDir(), "mamori.yaml", "exposedPaths:\n  - \"\"\n")
 	if _, _, err := config.Resolve([]string{"-config", path}, noEnv); err == nil {
 		t.Error("Resolve() with empty exposedPaths entry returned nil error, want rejection")
+	}
+}
+
+func TestResolveVersionAndHelpIgnoreInvalidAutoDiscoveredConfig(t *testing.T) {
+	for _, body := range []string{"workers: 0\n", "workers: [this is not an int\n"} {
+		dir := t.TempDir()
+		writeConfigFile(t, dir, ".mamori.yaml", body)
+		t.Chdir(dir)
+
+		for _, flagName := range []string{"-v", "-version"} {
+			cfg, _, err := config.Resolve([]string{flagName}, noEnv)
+			if err != nil {
+				t.Errorf("Resolve(%s) with invalid config %q returned error: %v", flagName, body, err)
+			}
+			if !cfg.Version {
+				t.Errorf("Resolve(%s) Version = false, want true", flagName)
+			}
+		}
+		for _, flagName := range []string{"-h", "-help"} {
+			if _, _, err := config.Resolve([]string{flagName}, noEnv); !errors.Is(err, flag.ErrHelp) {
+				t.Errorf("Resolve(%s) with invalid config %q error = %v, want flag.ErrHelp", flagName, body, err)
+			}
+		}
 	}
 }

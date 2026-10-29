@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -68,6 +69,23 @@ func prescanConfigFlag(args []string) string {
 	fs.SetOutput(io.Discard)
 	_ = fs.Parse(args)
 	return *configPath
+}
+
+// prescanEarlyExit reports whether args ask for -v/-version or -h/-help, using
+// the same registerFlags parse as the real one so the two agree on where flag
+// parsing stops. Resolve uses it to short-circuit before loadConfigLayer, so
+// printing a version or usage never depends on the working directory's
+// .mamori.yaml. A parse error of any other kind is not an early exit: the real
+// parse reports it after the config layer, as before.
+func prescanEarlyExit(args []string) (version, help bool) {
+	var cfg Config
+	fs, _ := registerFlags(&cfg)
+	fs.SetOutput(io.Discard)
+	perr := fs.Parse(args)
+	if errors.Is(perr, flag.ErrHelp) {
+		return false, true
+	}
+	return perr == nil && cfg.Version, false
 }
 
 func loadConfigFile(path string) (fileConfig, error) {
