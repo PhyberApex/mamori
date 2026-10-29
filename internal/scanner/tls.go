@@ -69,7 +69,12 @@ func (c CertExpiryChecker) Check(state *tls.ConnectionState, _ *url.URL) []Findi
 	var message string
 	if !leaf.NotAfter.After(time.Now().Add(c.threshold)) {
 		status = StatusInsecure
-		message = fmt.Sprintf("certificate expires %s, within the %s threshold", leaf.NotAfter.Format(time.RFC3339), c.threshold)
+		days := int(c.threshold.Hours() / 24)
+		unit := "days"
+		if days == 1 {
+			unit = "day"
+		}
+		message = fmt.Sprintf("certificate expires %s, within the %d-%s threshold", leaf.NotAfter.UTC().Format(time.RFC3339), days, unit)
 	}
 	return []Finding{{
 		Header:    "TLS (certificate)",
