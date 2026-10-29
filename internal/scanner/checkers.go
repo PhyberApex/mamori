@@ -197,6 +197,17 @@ func (CSPChecker) Check(headers http.Header, _ *url.URL) []Finding {
 // with neither object-src nor default-src leaves plugin content (e.g.
 // Flash/PDF embeds) completely unrestricted — object-src falls back to
 // default-src per spec, so only missing both is a gap.
+// wildcardSensitiveDirectives are the directives where a bare * source
+// opens an XSS path; elsewhere (img-src, font-src, ...) it is routinely fine.
+var wildcardSensitiveDirectives = map[string]bool{
+	"default-src":     true,
+	"script-src":      true,
+	"script-src-elem": true,
+	"script-src-attr": true,
+	"object-src":      true,
+	"base-uri":        true,
+}
+
 func cspWeakness(value string) (weak bool, message string) {
 	hasObjectSrc := false
 	hasDefaultSrc := false
@@ -212,13 +223,30 @@ func cspWeakness(value string) (weak bool, message string) {
 		case "default-src":
 			hasDefaultSrc = true
 		}
+		// CSP2+ browsers ignore 'unsafe-inline' when the same source list
+		// has a nonce or hash, so the pairing is the compatible-fallback
+		// pattern rather than a weakness.
+		neutralised := false
+		for _, source := range fields[1:] {
+			lower := strings.ToLower(source)
+			if strings.HasPrefix(lower, "'nonce-") || strings.HasPrefix(lower, "'sha256-") ||
+				strings.HasPrefix(lower, "'sha384-") || strings.HasPrefix(lower, "'sha512-") {
+				neutralised = true
+			}
+		}
 		for _, source := range fields[1:] {
 			switch strings.ToLower(source) {
 			case "'unsafe-inline'":
+				if neutralised {
+					continue
+				}
 				return true, fmt.Sprintf("%s allows 'unsafe-inline', which permits inline scripts/styles and defeats CSP's XSS protection", name)
 			case "'unsafe-eval'":
 				return true, fmt.Sprintf("%s allows 'unsafe-eval', which permits string-to-code execution (eval, Function, etc.)", name)
 			case "*":
+				if !wildcardSensitiveDirectives[name] {
+					continue
+				}
 				return true, fmt.Sprintf("%s allows * as a source, permitting content from any origin", name)
 			}
 		}
