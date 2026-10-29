@@ -166,6 +166,9 @@ func (r SarifReporter) Report(findings []Finding, w io.Writer) error {
 // findings reuse Header for the aspect judged ("Transport", "TLS
 // (certificate)") the same way — not a real response header — so they get
 // generic wording naming that aspect rather than any one checker's concern.
+// Weak/missing findings from the SRI, mixed-content and Set-Cookie families
+// reuse Header for a per-instance tag or cookie attribute, so they share one
+// stable rule per family (see sarifFamilies) rather than one rule per Header.
 func sarifRuleAndResult(f Finding) (sarifRule, sarifResult) {
 	var ruleID, description, message, level string
 	switch f.Status {

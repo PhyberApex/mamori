@@ -634,6 +634,9 @@ func TestSarifReporterGroupsBodyAndCookieFindingsUnderOneRulePerFamily(t *testin
 			t.Errorf("rule %q description %q contains \"response header\"", r.ID, r.ShortDescription.Text)
 		}
 	}
+	if len(run.Results) != 6 {
+		t.Fatalf("got %d results, want 6", len(run.Results))
+	}
 	want := []string{"subresource-integrity", "subresource-integrity", "mixed-content", "mixed-content", "set-cookie", "set-cookie"}
 	for i, res := range run.Results {
 		if res.RuleID != want[i] {
