@@ -120,6 +120,11 @@ func isCrossOrigin(base *url.URL, ref string) bool {
 	if err != nil {
 		return false
 	}
+	// SRI only applies to network fetches: data: URLs carry their own content
+	// and blob: URLs are created by the page itself.
+	if !strings.EqualFold(resolved.Scheme, "http") && !strings.EqualFold(resolved.Scheme, "https") {
+		return false
+	}
 	return !strings.EqualFold(resolved.Scheme, base.Scheme) || !strings.EqualFold(resolved.Host, base.Host)
 }
 
