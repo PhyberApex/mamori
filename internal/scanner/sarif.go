@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 )
 
 // sarifSchemaURI pins the exact SARIF 2.1.0 schema document these reports
@@ -194,7 +195,7 @@ func sarifRuleAndResult(f Finding) (sarifRule, sarifResult) {
 		}
 		level = sarifLevel(f.Severity)
 	default:
-		if family, ok := sarifFamilies[f.Reference]; ok {
+		if family, ok := sarifFamilyOf(f); ok {
 			ruleID = family.id
 			description = family.description
 			message = fmt.Sprintf("%s is %s", f.Header, f.Status)
@@ -240,6 +241,18 @@ var sarifFamilies = map[string]sarifFamily{
 	sriReference:          {"subresource-integrity", "Checks that cross-origin scripts and styles carry an integrity attribute."},
 	mixedContentReference: {"mixed-content", "Checks for resources loaded over plain HTTP on an HTTPS page."},
 	cookieReference:       {"set-cookie", "Checks Set-Cookie attributes (Secure, HttpOnly, SameSite)."},
+}
+
+// sarifFamilyOf returns the family rule for f. cookieReference is also
+// carried by CacheControlChecker's plain-header Findings, so a Finding only
+// belongs to the set-cookie family when its Header is a Set-Cookie attribute
+// tag; Cache-Control keeps its own header-named rule.
+func sarifFamilyOf(f Finding) (sarifFamily, bool) {
+	family, ok := sarifFamilies[f.Reference]
+	if ok && f.Reference == cookieReference && !strings.HasPrefix(f.Header, "Set-Cookie:") {
+		return sarifFamily{}, false
+	}
+	return family, ok
 }
 
 // sarifLevel maps Severity to a SARIF result level, per the low->note,

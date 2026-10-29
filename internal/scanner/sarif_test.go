@@ -650,3 +650,18 @@ func TestSarifReporterGroupsBodyAndCookieFindingsUnderOneRulePerFamily(t *testin
 		}
 	}
 }
+
+func TestSarifReporterKeepsCacheControlOutOfSetCookieFamily(t *testing.T) {
+	const cookieRef = "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html"
+	findings := []scanner.Finding{
+		{URL: "https://a.example", Header: "Cache-Control", Status: scanner.StatusWeak, Severity: scanner.SeverityMedium, Reference: cookieRef, Message: "x"},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.SarifReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+	if !strings.Contains(buf.String(), `"ruleId": "Cache-Control"`) && !strings.Contains(buf.String(), `"ruleId":"Cache-Control"`) {
+		t.Errorf("Cache-Control finding was not reported under its own rule: %s", buf.String())
+	}
+}
