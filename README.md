@@ -225,6 +225,12 @@ is the more unusual, actionable problem, so it isn't silently replaced by
 the routine fail-on exit code. With no hooks configured, no subprocess is
 spawned and no hook timeout is enforced.
 
+Hooks need a shell (`sh`) on `PATH`. The container image
+(`ghcr.io/phyberapex/mamori`, and therefore the GitHub Action) is built on
+distroless and ships no shell, so hooks do not work there: a configured hook
+fails with an error naming the missing `sh` and mamori exits `3`. Hooks work
+when running a `mamori` binary directly on a host that has `sh`.
+
 Sending SIGINT (e.g. Ctrl-C) or SIGTERM (e.g. from a CI runner stopping the
 job) cancels every in-flight and not-yet-started request the scan itself is
 making — the plain checks, the CORS/Origin probe, and every
@@ -363,6 +369,11 @@ permissions:
 ```
 
 The action supports Linux runners only.
+
+`preScanHook`/`postScanHook` in the action's `config` file are not supported:
+the image the action runs has no shell, so a configured hook fails with exit
+code `3` (see Hooks above). Run the `mamori` binary directly in a workflow
+step if you need hooks.
 
 ## License
 

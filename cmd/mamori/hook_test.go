@@ -90,3 +90,20 @@ func TestRunHookRoutesOutputToStderrNotStdout(t *testing.T) {
 		t.Errorf("runHook() stderr = %q, want it to contain the hook's output", stderr.String())
 	}
 }
+
+func TestRunHookReportsMissingShell(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	var stderr bytes.Buffer
+	ran, err := runHook(context.Background(), "exit 0", hookPhasePre, nil, time.Second, &stderr)
+	if !ran {
+		t.Error("runHook() with a command ran = false, want true")
+	}
+	if !errors.Is(err, errHookFailed) {
+		t.Fatalf("runHook() error = %v, want errHookFailed", err)
+	}
+	for _, want := range []string{"pre-scan hook", `"sh"`, "container image"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("runHook() error = %q, want it to contain %q", err, want)
+		}
+	}
+}
