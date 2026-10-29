@@ -191,9 +191,15 @@ func sarifRuleAndResult(f Finding) (sarifRule, sarifResult) {
 		}
 		level = sarifLevel(f.Severity)
 	default:
-		ruleID = f.Header
-		description = fmt.Sprintf("Checks the %s response header.", f.Header)
-		message = fmt.Sprintf("%s header is %s", f.Header, f.Status)
+		if family, ok := sarifFamilies[f.Reference]; ok {
+			ruleID = family.id
+			description = family.description
+			message = fmt.Sprintf("%s is %s", f.Header, f.Status)
+		} else {
+			ruleID = f.Header
+			description = fmt.Sprintf("Checks the %s response header.", f.Header)
+			message = fmt.Sprintf("%s header is %s", f.Header, f.Status)
+		}
 		if f.Message != "" {
 			message += ": " + f.Message
 		}
@@ -216,6 +222,21 @@ func sarifRuleAndResult(f Finding) (sarifRule, sarifResult) {
 		result.Properties = &sarifProperties{FinalURL: f.FinalURL, StatusCode: f.StatusCode}
 	}
 	return rule, result
+}
+
+// sarifFamily is a stable SARIF rule for a Checker family whose Findings
+// reuse Header for a per-instance detail (a tag, a cookie attribute) rather
+// than a header name — keying the rule on Header would mint one rule per
+// URL or cookie name.
+type sarifFamily struct{ id, description string }
+
+// sarifFamilies maps a family's Finding.Reference to its rule. Reference is
+// the key because SRI and mixed-content Findings share tag shapes in Header
+// but each carries its own constant Reference.
+var sarifFamilies = map[string]sarifFamily{
+	sriReference:          {"subresource-integrity", "Checks that cross-origin scripts and styles carry an integrity attribute."},
+	mixedContentReference: {"mixed-content", "Checks for resources loaded over plain HTTP on an HTTPS page."},
+	cookieReference:       {"set-cookie", "Checks Set-Cookie attributes (Secure, HttpOnly, SameSite)."},
 }
 
 // sarifLevel maps Severity to a SARIF result level, per the low->note,

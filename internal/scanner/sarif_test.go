@@ -581,3 +581,69 @@ func TestSarifReporterDescribesCertificateFindingWithoutTransportWording(t *test
 		t.Errorf("message = %q, want it to include the finding's own message", msg)
 	}
 }
+
+func TestSarifReporterGroupsBodyAndCookieFindingsUnderOneRulePerFamily(t *testing.T) {
+	const (
+		scannerSRIRef    = "https://cheatsheetseries.owasp.org/cheatsheets/Subresource_Integrity_Cheat_Sheet.html"
+		scannerMixedRef  = "https://developer.mozilla.org/en-US/docs/Web/Security/Mixed_content"
+		scannerCookieRef = "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html"
+	)
+	findings := []scanner.Finding{
+		{URL: "https://a.example", Header: `<script src="https://cdn.x/a.js">`, Status: scanner.StatusWeak, Severity: scanner.SeverityLow, Reference: scannerSRIRef, Message: "no integrity"},
+		{URL: "https://a.example", Header: `<script src="https://cdn.x/b.js">`, Status: scanner.StatusWeak, Severity: scanner.SeverityLow, Reference: scannerSRIRef, Message: "no integrity"},
+		{URL: "https://a.example", Header: `<img src="http://x/a.png">`, Status: scanner.StatusWeak, Severity: scanner.SeverityMedium, Reference: scannerMixedRef, Message: "http"},
+		{URL: "https://a.example", Header: `<img src="http://x/b.png">`, Status: scanner.StatusWeak, Severity: scanner.SeverityMedium, Reference: scannerMixedRef, Message: "http"},
+		{URL: "https://a.example", Header: "Set-Cookie: sid (Secure)", Status: scanner.StatusWeak, Severity: scanner.SeverityMedium, Reference: scannerCookieRef, Message: "x"},
+		{URL: "https://a.example", Header: "Set-Cookie: other (HttpOnly)", Status: scanner.StatusWeak, Severity: scanner.SeverityMedium, Reference: scannerCookieRef, Message: "x"},
+	}
+
+	var buf bytes.Buffer
+	if err := (scanner.SarifReporter{}).Report(findings, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+
+	var doc struct {
+		Runs []struct {
+			Tool struct {
+				Driver struct {
+					Rules []struct {
+						ID               string `json:"id"`
+						ShortDescription struct {
+							Text string `json:"text"`
+						} `json:"shortDescription"`
+					} `json:"rules"`
+				} `json:"driver"`
+			} `json:"tool"`
+			Results []struct {
+				RuleID  string `json:"ruleId"`
+				Message struct {
+					Text string `json:"text"`
+				} `json:"message"`
+			} `json:"results"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &doc); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	run := doc.Runs[0]
+	if len(run.Tool.Driver.Rules) != 3 {
+		t.Fatalf("got %d rules, want 3: %+v", len(run.Tool.Driver.Rules), run.Tool.Driver.Rules)
+	}
+	for _, r := range run.Tool.Driver.Rules {
+		if strings.Contains(r.ShortDescription.Text, "response header") {
+			t.Errorf("rule %q description %q contains \"response header\"", r.ID, r.ShortDescription.Text)
+		}
+	}
+	want := []string{"subresource-integrity", "subresource-integrity", "mixed-content", "mixed-content", "set-cookie", "set-cookie"}
+	for i, res := range run.Results {
+		if res.RuleID != want[i] {
+			t.Errorf("result %d ruleId = %q, want %q", i, res.RuleID, want[i])
+		}
+		if !strings.Contains(res.Message.Text, findings[i].Header) {
+			t.Errorf("result %d message %q lacks per-instance Header %q", i, res.Message.Text, findings[i].Header)
+		}
+		if strings.Contains(res.Message.Text, " header is ") {
+			t.Errorf("result %d message %q uses header wording", i, res.Message.Text)
+		}
+	}
+}
