@@ -163,3 +163,20 @@ func TestPathCheckersForExtraPathDuplicatingADefaultIsProbedOnce(t *testing.T) {
 		t.Errorf("%q appears %d times in the effective checker set, want 1 (extra path already in the default list)", ".env", count)
 	}
 }
+
+func TestPathCheckersForNormalisesExtraPaths(t *testing.T) {
+	checkers := scanner.PathCheckersFor(true, []string{"/.env", " debug.log ", "/debug.log", "", "  "})
+	counts := map[string]int{}
+	for _, c := range checkers {
+		counts[c.Path()]++
+	}
+	if counts[".env"] != 1 {
+		t.Errorf(".env appears %d times, want 1 (\"/.env\" duplicates the default)", counts[".env"])
+	}
+	if counts["debug.log"] != 1 {
+		t.Errorf("debug.log appears %d times, want 1", counts["debug.log"])
+	}
+	if counts[""] != 0 || len(checkers) != len(scanner.DefaultPathCheckers())+1 {
+		t.Errorf("got %d checkers (empty-path count %d), want defaults + debug.log only", len(checkers), counts[""])
+	}
+}

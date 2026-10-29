@@ -141,7 +141,11 @@ func applyFileConfig(cfg *Config, fc fileConfig, path string) error {
 	// Additive, not a replace: applyFileConfig runs before the -exposed-path
 	// flag is parsed, so appending here lets a repeated -exposed-path flag
 	// extend what the config file already set rather than clobbering it.
-	cfg.ExtraExposedPaths = append(cfg.ExtraExposedPaths, fc.ExposedPaths...)
+	for _, ep := range fc.ExposedPaths {
+		if err := cfg.ExtraExposedPaths.Set(ep); err != nil {
+			return fmt.Errorf("%s: exposedPaths: %q: %w", path, ep, err)
+		}
+	}
 	return nil
 }
 

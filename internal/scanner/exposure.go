@@ -3,6 +3,7 @@ package scanner
 import (
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 // PathChecker is a checker category parallel to Checker (headers) and
@@ -123,6 +124,15 @@ func DefaultPathCheckers() []PathChecker {
 	}
 }
 
+// NormalizeExposedPath canonicalises a user-supplied exposed path to the
+// root-relative form PathChecker.Path documents: surrounding whitespace and
+// leading slashes are dropped, so "/.env" and " .env" both become ".env".
+// An empty result means the input named no path (it would probe the origin
+// root itself) and callers must reject it.
+func NormalizeExposedPath(p string) string {
+	return strings.TrimLeft(strings.TrimSpace(p), "/")
+}
+
 // PathCheckersFor builds the effective PathChecker set for a scan from the
 // resolved config: enabled turns on DefaultPathCheckers, and extra adds to
 // it — supplying at least one extra path enables the category on its own,
@@ -140,7 +150,8 @@ func PathCheckersFor(enabled bool, extra []string) []PathChecker {
 		seen[c.Path()] = true
 	}
 	for _, path := range extra {
-		if seen[path] {
+		path = NormalizeExposedPath(path)
+		if path == "" || seen[path] {
 			continue
 		}
 		seen[path] = true

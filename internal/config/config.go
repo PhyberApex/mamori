@@ -3,6 +3,7 @@
 package config
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"math"
@@ -156,7 +157,11 @@ type ExposedPaths []string
 func (p *ExposedPaths) String() string { return strings.Join(*p, ", ") }
 
 func (p *ExposedPaths) Set(v string) error {
-	*p = append(*p, v)
+	n := scanner.NormalizeExposedPath(v)
+	if n == "" {
+		return errors.New("path must not be empty")
+	}
+	*p = append(*p, n)
 	return nil
 }
 

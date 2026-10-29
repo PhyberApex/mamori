@@ -575,3 +575,21 @@ func TestResolveRejectsNonexistentBaselineEnvVar(t *testing.T) {
 		t.Error("Resolve() with MAMORI_BASELINE pointed at a nonexistent file returned nil error, want error")
 	}
 }
+
+func TestResolveNormalisesExposedPathFlag(t *testing.T) {
+	cfg, _, err := config.Resolve([]string{"-exposed-path", " /debug.log "}, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if want := []string{"debug.log"}; !reflect.DeepEqual([]string(cfg.ExtraExposedPaths), want) {
+		t.Errorf("ExtraExposedPaths = %v, want %v", cfg.ExtraExposedPaths, want)
+	}
+}
+
+func TestResolveRejectsEmptyExposedPathFlag(t *testing.T) {
+	for _, v := range []string{"", "  ", "/"} {
+		if _, _, err := config.Resolve([]string{"-exposed-path", v}, noEnv); err == nil {
+			t.Errorf("Resolve(-exposed-path %q) returned nil error, want rejection", v)
+		}
+	}
+}
