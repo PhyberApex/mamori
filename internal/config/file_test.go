@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -529,5 +530,21 @@ func TestResolveWithNoConfigFilePresentIsUnchanged(t *testing.T) {
 	}
 	if len(rest) != 1 || rest[0] != "https://a.example" {
 		t.Errorf("targets = %v, want [https://a.example]", rest)
+	}
+}
+
+func TestResolveConfigFileNormalisesAndRejectsEmptyExposedPaths(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", "exposedPaths:\n  - /.env\n")
+	cfg, _, err := config.Resolve([]string{"-config", path}, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if want := []string{".env"}; !reflect.DeepEqual([]string(cfg.ExtraExposedPaths), want) {
+		t.Errorf("ExtraExposedPaths = %v, want %v", cfg.ExtraExposedPaths, want)
+	}
+
+	path = writeConfigFile(t, t.TempDir(), "mamori.yaml", "exposedPaths:\n  - \"\"\n")
+	if _, _, err := config.Resolve([]string{"-config", path}, noEnv); err == nil {
+		t.Error("Resolve() with empty exposedPaths entry returned nil error, want rejection")
 	}
 }
