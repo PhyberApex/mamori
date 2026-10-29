@@ -1149,3 +1149,36 @@ func TestScanThrottlesEveryRequestKindToSameHost(t *testing.T) {
 		}
 	}
 }
+
+// TestScanPathProbeDoesNotDownloadUnboundedBody pins that a path probe hitting
+// a huge exposed file (backup.zip) reads only a bounded prefix of the body
+// rather than draining it until the client timeout.
+func TestScanPathProbeDoesNotDownloadUnboundedBody(t *testing.T) {
+	var written atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/backup.zip" {
+			http.NotFound(w, r)
+			return
+		}
+		chunk := make([]byte, 32<<10)
+		for {
+			n, err := w.Write(chunk)
+			written.Add(int64(n))
+			if err != nil {
+				return
+			}
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	pathCheckers := []scanner.PathChecker{scanner.NewExposureChecker("backup.zip", scanner.SeverityHigh)}
+	start := time.Now()
+	scanner.Scan(t.Context(), srv.Client(), nil, nil, pathCheckers, nil, []string{srv.URL}, 1, nil)
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Errorf("probe took %v, want a bounded read well under the client timeout", elapsed)
+	}
+	// 64 KiB drain cap plus transport/socket buffering slack.
+	if got := written.Load(); got > 8<<20 {
+		t.Errorf("server wrote %d bytes before probe stopped reading, want a small bounded amount", got)
+	}
+}
