@@ -190,13 +190,6 @@ func (CSPChecker) Check(headers http.Header, _ *url.URL) []Finding {
 	)
 }
 
-// cspWeakness flags a CSP value that's present but provides little real
-// protection: 'unsafe-inline'/'unsafe-eval' in any directive re-enable the
-// exact inline-script and string-to-code execution CSP exists to block, a
-// bare "*" source allows loading that content from any origin, and a policy
-// with neither object-src nor default-src leaves plugin content (e.g.
-// Flash/PDF embeds) completely unrestricted — object-src falls back to
-// default-src per spec, so only missing both is a gap.
 // wildcardSensitiveDirectives are the directives where a bare * source
 // opens an XSS path; elsewhere (img-src, font-src, ...) it is routinely fine.
 var wildcardSensitiveDirectives = map[string]bool{
@@ -208,6 +201,16 @@ var wildcardSensitiveDirectives = map[string]bool{
 	"base-uri":        true,
 }
 
+// cspWeakness flags a CSP value that's present but provides little real
+// protection: 'unsafe-inline'/'unsafe-eval' in any directive re-enable the
+// exact inline-script and string-to-code execution CSP exists to block, a
+// bare "*" source in a script-relevant directive allows loading that content from any origin, and a policy
+// with neither object-src nor default-src leaves plugin content (e.g.
+// Flash/PDF embeds) completely unrestricted — object-src falls back to
+// default-src per spec, so only missing both is a gap.
+//
+// 'unsafe-inline' is ignored by CSP2+ browsers when the same source list has
+// a nonce or hash, so that pairing is not reported; 'unsafe-eval' always is.
 func cspWeakness(value string) (weak bool, message string) {
 	hasObjectSrc := false
 	hasDefaultSrc := false
