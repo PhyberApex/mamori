@@ -1,7 +1,9 @@
 package scanner
 
 import (
+	"bytes"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 
@@ -40,6 +42,37 @@ var mixedContentLinkRels = []string{
 	"prerender",
 }
 
+// cspUpgradesInsecureRequests reports whether any of the enforced policies
+// carries an upgrade-insecure-requests directive. The browser then rewrites
+// every http:// subresource to https:// before fetching, so none is loaded
+// as mixed content (CONTEXT.md, Applicable).
+func cspUpgradesInsecureRequests(policies []string) bool {
+	return cspDeclaresDirective(policies, "upgrade-insecure-requests")
+}
+
+// metaCSPUpgradesInsecureRequests reports whether any <meta
+// http-equiv="Content-Security-Policy"> element in the document declares
+// upgrade-insecure-requests. Report-Only has no meta form, so any such meta
+// is enforced.
+func metaCSPUpgradesInsecureRequests(doc *html.Node) bool {
+	var policies []string
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.ElementNode && n.Data == "meta" {
+			if eq, _ := attrValue(n, "http-equiv"); strings.EqualFold(strings.TrimSpace(eq), "Content-Security-Policy") {
+				if content, ok := attrValue(n, "content"); ok {
+					policies = append(policies, content)
+				}
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(doc)
+	return cspUpgradesInsecureRequests(policies)
+}
+
 // MixedContentChecker flags resources an https:// page loads over plain
 // http:// instead. Those resources bypass TLS entirely, so a network
 // attacker can tamper with or substitute them even though the page itself
@@ -49,11 +82,19 @@ var mixedContentLinkRels = []string{
 // produces no findings at all, mirroring how BannerDisclosureChecker treats
 // absence as the desired state. The check only applies to https:// targets —
 // an http:// target has no TLS guarantee for mixed content to undermine in
-// the first place.
+// the first place. A page whose enforced Content-Security-Policy (header or
+// meta tag) carries upgrade-insecure-requests is not judged either: the
+// browser upgrades each such reference before fetching it.
 type MixedContentChecker struct{}
 
-func (MixedContentChecker) CheckBody(body []byte, respURL *url.URL) []Finding {
+func (MixedContentChecker) CheckBody(body []byte, headers http.Header, respURL *url.URL) []Finding {
 	if respURL.Scheme != "https" {
+		return nil
+	}
+	if cspUpgradesInsecureRequests(headers.Values("Content-Security-Policy")) {
+		return nil
+	}
+	if doc, err := html.Parse(bytes.NewReader(body)); err == nil && metaCSPUpgradesInsecureRequests(doc) {
 		return nil
 	}
 	return walkElements(body, func(n *html.Node) *Finding {
