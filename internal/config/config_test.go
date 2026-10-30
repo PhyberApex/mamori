@@ -593,3 +593,29 @@ func TestResolveRejectsEmptyExposedPathFlag(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveCheckTLSVersions(t *testing.T) {
+	cfg, _, err := config.Resolve(nil, noEnv)
+	if err != nil || cfg.CheckTLSVersions {
+		t.Fatalf("default: cfg.CheckTLSVersions = %v, err = %v, want false, nil", cfg.CheckTLSVersions, err)
+	}
+
+	cfg, _, err = config.Resolve([]string{"-check-tls-versions"}, noEnv)
+	if err != nil || !cfg.CheckTLSVersions {
+		t.Errorf("flag: cfg.CheckTLSVersions = %v, err = %v, want true, nil", cfg.CheckTLSVersions, err)
+	}
+
+	cfg, _, err = config.Resolve(nil, envWith(map[string]string{"MAMORI_CHECK_TLS_VERSIONS": "true"}))
+	if err != nil || !cfg.CheckTLSVersions {
+		t.Errorf("env: cfg.CheckTLSVersions = %v, err = %v, want true, nil", cfg.CheckTLSVersions, err)
+	}
+
+	cfg, _, err = config.Resolve([]string{"-check-tls-versions=false"}, envWith(map[string]string{"MAMORI_CHECK_TLS_VERSIONS": "true"}))
+	if err != nil || cfg.CheckTLSVersions {
+		t.Errorf("flag over env: cfg.CheckTLSVersions = %v, err = %v, want false, nil", cfg.CheckTLSVersions, err)
+	}
+
+	if _, _, err := config.Resolve(nil, envWith(map[string]string{"MAMORI_CHECK_TLS_VERSIONS": "sure"})); err == nil {
+		t.Error("invalid env value returned nil error, want error")
+	}
+}

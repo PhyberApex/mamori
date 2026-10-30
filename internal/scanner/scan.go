@@ -12,11 +12,28 @@ import (
 	"sync"
 )
 
+// ScanOption configures optional Scan behavior without widening its
+// positional signature.
+type ScanOption func(*scanOptions)
+
+type scanOptions struct {
+	tlsVersionProbe *TLSVersionProbe
+}
+
+// WithTLSVersionProbe enables the opt-in TLS legacy-protocol probe.
+func WithTLSVersionProbe(p *TLSVersionProbe) ScanOption {
+	return func(o *scanOptions) { o.tlsVersionProbe = p }
+}
+
 // Scan fans the URLs out to a fixed pool of worker goroutines. A failed
 // target becomes an error finding instead of aborting the scan, so every
 // target is accounted for in the report. headers, if non-nil, is applied to
 // every outgoing request (e.g. for endpoints that require auth).
-func Scan(ctx context.Context, client *http.Client, checkers []Checker, bodyCheckers []BodyChecker, pathCheckers []PathChecker, tlsCheckers []TLSChecker, urls []string, workers int, headers http.Header) []Finding {
+func Scan(ctx context.Context, client *http.Client, checkers []Checker, bodyCheckers []BodyChecker, pathCheckers []PathChecker, tlsCheckers []TLSChecker, urls []string, workers int, headers http.Header, opts ...ScanOption) []Finding {
+	var so scanOptions
+	for _, o := range opts {
+		o(&so)
+	}
 	jobs := make(chan int)
 	// Each worker writes only to its own job's index, so the slice needs no
 	// mutex: distinct goroutines never touch the same element, and wg.Wait()
@@ -33,7 +50,7 @@ func Scan(ctx context.Context, client *http.Client, checkers []Checker, bodyChec
 			// Ranging over a channel keeps receiving until it is closed,
 			// which is how each worker knows there is no more work.
 			for i := range jobs {
-				perTarget[i] = scanTarget(ctx, client, checkers, bodyCheckers, pathCheckers, tlsCheckers, urls[i], headers)
+				perTarget[i] = scanTarget(ctx, client, checkers, bodyCheckers, pathCheckers, tlsCheckers, so.tlsVersionProbe, urls[i], headers)
 			}
 		}()
 	}
@@ -58,7 +75,7 @@ func Scan(ctx context.Context, client *http.Client, checkers []Checker, bodyChec
 // user typed and is what every returned Finding is keyed by (see the loop at
 // the bottom); it is deliberately not passed to RunAll/RunAllBody, which
 // instead get the final, post-redirect URL each response actually came from.
-func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, bodyCheckers []BodyChecker, pathCheckers []PathChecker, tlsCheckers []TLSChecker, targetURL string, reqHeaders http.Header) []Finding {
+func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, bodyCheckers []BodyChecker, pathCheckers []PathChecker, tlsCheckers []TLSChecker, tlsVersionProbe *TLSVersionProbe, targetURL string, reqHeaders http.Header) []Finding {
 	var respHeaders http.Header
 	var respURL *url.URL
 	var respStatus int
@@ -93,6 +110,16 @@ func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, bo
 	findings = append(findings, RunAllTLS(tlsCheckers, respTLS, respURL)...)
 	setFinalURL(findings, targetURL, respURL)
 	setStatusCode(findings, respStatus)
+
+	// The opt-in legacy-protocol probe issues its own handshakes (ADR-0005);
+	// it judges the same host the scan request landed on, so its Findings
+	// carry the same Final URL and status as that response.
+	if respTLS != nil {
+		probeFindings := tlsVersionProbe.Probe(ctx, respURL)
+		setFinalURL(probeFindings, targetURL, respURL)
+		setStatusCode(probeFindings, respStatus)
+		findings = append(findings, probeFindings...)
+	}
 
 	// Only pay for the extra request when a configured Checker actually
 	// needs it. A probe failure is skipped rather than turned into an error

@@ -36,6 +36,7 @@ type fileConfig struct {
 	HookTimeout       *string  `yaml:"hookTimeout"`
 	Baseline          *string  `yaml:"baseline"`
 	CertExpiryDays    *int     `yaml:"certExpiryDays"`
+	CheckTLSVersions  *bool    `yaml:"checkTLSVersions"`
 }
 
 // resolveConfigPath decides which config file, if any, supplies the config
@@ -153,6 +154,9 @@ func applyFileConfig(cfg *Config, fc fileConfig, path string) error {
 		return fmt.Errorf("%s: %w", path, err)
 	}
 	cfg.Suppressions = fc.Suppressions
+	if fc.CheckTLSVersions != nil {
+		cfg.CheckTLSVersions = *fc.CheckTLSVersions
+	}
 	if fc.CheckExposedPaths != nil {
 		cfg.CheckExposedPaths = *fc.CheckExposedPaths
 	}

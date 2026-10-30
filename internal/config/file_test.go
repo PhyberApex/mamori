@@ -573,3 +573,14 @@ func TestResolveVersionAndHelpIgnoreInvalidAutoDiscoveredConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveConfigFileLoadsCheckTLSVersions(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", "checkTLSVersions: true\n")
+	cfg, _, err := config.Resolve([]string{"-config", path}, noEnv)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+	if !cfg.CheckTLSVersions {
+		t.Error("CheckTLSVersions = false, want true from config file")
+	}
+}
