@@ -188,11 +188,17 @@ func (FrameOptionsChecker) Check(headers http.Header, _ *url.URL) []Finding {
 // declaresFrameAncestors reports whether any enforced Content-Security-Policy
 // header carries a frame-ancestors directive, whatever its value.
 func declaresFrameAncestors(headers http.Header) bool {
-	for _, raw := range headers.Values("Content-Security-Policy") {
+	return cspDeclaresDirective(headers.Values("Content-Security-Policy"), "frame-ancestors")
+}
+
+// cspDeclaresDirective reports whether any of the policies carries the named
+// directive (case-insensitive), whatever its value.
+func cspDeclaresDirective(policies []string, name string) bool {
+	for _, raw := range policies {
 		// A comma joins several policies into one header value.
 		for _, directive := range strings.FieldsFunc(raw, func(r rune) bool { return r == ';' || r == ',' }) {
 			fields := strings.Fields(directive)
-			if len(fields) > 0 && strings.EqualFold(fields[0], "frame-ancestors") {
+			if len(fields) > 0 && strings.EqualFold(fields[0], name) {
 				return true
 			}
 		}

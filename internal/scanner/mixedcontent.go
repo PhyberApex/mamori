@@ -47,16 +47,7 @@ var mixedContentLinkRels = []string{
 // every http:// subresource to https:// before fetching, so none is loaded
 // as mixed content (CONTEXT.md, Applicable).
 func cspUpgradesInsecureRequests(policies []string) bool {
-	for _, raw := range policies {
-		// A comma joins several policies into one header value.
-		for _, directive := range strings.FieldsFunc(raw, func(r rune) bool { return r == ';' || r == ',' }) {
-			fields := strings.Fields(directive)
-			if len(fields) > 0 && strings.EqualFold(fields[0], "upgrade-insecure-requests") {
-				return true
-			}
-		}
-	}
-	return false
+	return cspDeclaresDirective(policies, "upgrade-insecure-requests")
 }
 
 // metaCSPUpgradesInsecureRequests reports whether any <meta

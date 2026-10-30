@@ -2,6 +2,7 @@ package scanner_test
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 
@@ -145,5 +146,18 @@ func TestMixedContentStillFlaggedWithoutEnforcedUpgrade(t *testing.T) {
 				t.Fatalf("CheckBody() returned %d findings, want 1: %+v", len(got), got)
 			}
 		})
+	}
+}
+
+func TestScanHonoursUpgradeInsecureRequestsHeader(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Security-Policy", "upgrade-insecure-requests")
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<img src="http://cdn.example.com/a.png">`))
+	}))
+	defer srv.Close()
+	findings := scanner.Scan(t.Context(), srv.Client(), nil, scanner.DefaultBodyCheckers(), nil, nil, []string{srv.URL}, 1, nil)
+	if len(findings) != 0 {
+		t.Fatalf("Scan() = %+v, want no findings", findings)
 	}
 }
