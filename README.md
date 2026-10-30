@@ -8,8 +8,10 @@ security headers (HSTS, CSP, `X-Frame-Options`, `X-Content-Type-Options`,
 with each missing header linked to guidance on how to fix it. HSTS is judged
 only on responses received over HTTPS (after following any redirects); a
 plain-HTTP response produces no finding for it, since browsers ignore the
-header on that transport. The transport itself is always judged separately:
-a response that lands on plain HTTP — whether the target was typed that way
+header on that transport. An HSTS `max-age` below six months (15552000
+seconds) is reported `weak`; the message names OWASP's one-year (31536000)
+recommendation, and `includeSubDomains`/`preload` are not judged. The transport itself is always judged
+separately: a response that lands on plain HTTP — whether the target was typed that way
 or a redirect chain downgraded it from HTTPS — gets a dedicated `high`
 severity `insecure` finding. `X-Frame-Options` is likewise not judged on a
 response whose enforced `Content-Security-Policy` declares `frame-ancestors`,

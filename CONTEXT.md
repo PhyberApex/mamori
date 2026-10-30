@@ -21,7 +21,7 @@ The HTTP status code of the response a Finding was actually judged on, reported 
 _Avoid_: Error page, HTTP error — Final Status is not itself an error signal, just the status code of whatever response was judged; a 401/404/500 judged response can still carry an otherwise-passing Status.
 
 **Status**:
-Where a Finding landed after a Checker ran: `pass` (present and effective), `missing` (absent or blank), `weak` (present but a known no-op value), `exposed` (a PathChecker's probed path was confirmed reachable), `insecure` (the judged response arrived over plain HTTP), `error` (the scan itself failed, e.g. an unreachable target).
+Where a Finding landed after a Checker ran: `pass` (present and effective), `missing` (absent or blank), `weak` (present but a known no-op value, or one too weak to protect — e.g. an HSTS `max-age` below six months), `exposed` (a PathChecker's probed path was confirmed reachable), `insecure` (the judged response arrived over plain HTTP), `error` (the scan itself failed, e.g. an unreachable target).
 _Avoid_: Result, Outcome.
 
 **PathChecker**:
@@ -37,7 +37,7 @@ A Status for a PathChecker Finding whose probed path came back `200`/`206` (a fu
 _Avoid_: Found, Discovered — too generic; `exposed` names the specific problem (a sensitive path is reachable), matching how `weak` names its problem rather than using a generic "Invalid".
 
 **Weak**:
-A Status for a header that is present but whose value provides none of the protection the header exists for. Kept distinct from `missing` because "isn't set" and "set but useless" are different problems for a reader to fix.
+A Status for a header that is present but whose value provides none of the protection the header exists for — or, for HSTS, too little to hold across visits (`max-age` below six months). Kept distinct from `missing` because "isn't set" and "set but useless" are different problems for a reader to fix.
 _Avoid_: Invalid, Misconfigured — too vague; every weak value is a specific, named failure mode, not a generic complaint.
 
 **Severity**:

@@ -88,6 +88,10 @@ func TestHSTSWeakValues(t *testing.T) {
 		{"missing max-age directive", "includeSubDomains"},
 		{"quoted zero max-age", `max-age="0"`},
 		{"quoted unparseable max-age", `max-age="abc"`},
+		{"one second max-age", "max-age=1"},
+		{"five minutes max-age", "max-age=300; includeSubDomains"},
+		{"just below six months", "max-age=15551999"},
+		{"quoted short max-age", `max-age="300"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -99,6 +103,20 @@ func TestHSTSWeakValues(t *testing.T) {
 				t.Error("Message is empty, want an explanation")
 			}
 		})
+	}
+}
+
+func TestHSTSShortMaxAgeMessage(t *testing.T) {
+	findings := scanner.HSTSChecker{}.Check(http.Header{"Strict-Transport-Security": {`max-age="300"`}}, testURL)
+	if len(findings) != 1 {
+		t.Fatalf("Check() returned %d findings, want 1", len(findings))
+	}
+	want := "max-age=300 is below six months; OWASP recommends at least one year (31536000)"
+	if findings[0].Message != want {
+		t.Errorf("Message = %q, want %q", findings[0].Message, want)
+	}
+	if findings[0].Severity != scanner.SeverityHigh {
+		t.Errorf("Severity = %q, want high", findings[0].Severity)
 	}
 }
 
@@ -158,6 +176,7 @@ func TestHSTSAcceptsValidMaxAge(t *testing.T) {
 		"max-age=63072000; includeSubDomains",
 		"includeSubDomains; max-age=63072000",
 		`max-age="31536000"`,
+		"max-age=15552000",
 		`max-age=" 31536000 "; includeSubDomains`,
 	}
 	for _, value := range tests {
