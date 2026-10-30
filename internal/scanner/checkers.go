@@ -322,7 +322,8 @@ func (ReferrerPolicyChecker) Check(headers http.Header, _ *url.URL) []Finding {
 	)
 }
 
-// referrerPolicyWeakness flags unsafe-url, which explicitly sends the full
+// referrerPolicyWeakness flags a value with no recognized token (browsers
+// ignore it, so it protects as little as a missing header) and unsafe-url, which explicitly sends the full
 // URL (including any query string) to third parties on every cross-origin
 // request — the opposite of what this header is for.
 //
@@ -332,7 +333,11 @@ func (ReferrerPolicyChecker) Check(headers http.Header, _ *url.URL) []Finding {
 // that list, not the value as a whole — so a strong-looking value can still
 // resolve to unsafe-url if a weaker token follows it.
 func referrerPolicyWeakness(value string) (weak bool, message string) {
-	if strings.EqualFold(effectiveReferrerPolicy(value), "unsafe-url") {
+	effective := effectiveReferrerPolicy(value)
+	if effective == "" {
+		return true, fmt.Sprintf("%q is not a recognized Referrer-Policy value and provides no protection", value)
+	}
+	if strings.EqualFold(effective, "unsafe-url") {
 		return true, "unsafe-url leaks the full URL, including query strings, to third parties on cross-origin requests"
 	}
 	return false, ""

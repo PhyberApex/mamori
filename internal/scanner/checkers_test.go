@@ -1,6 +1,7 @@
 package scanner_test
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -377,6 +378,33 @@ func TestReferrerPolicyWeakFallbackList(t *testing.T) {
 				t.Error("Message is empty, want an explanation")
 			}
 		})
+	}
+}
+
+func TestReferrerPolicyUnrecognizedValueIsWeak(t *testing.T) {
+	// A value with no recognized token is ignored by browsers, so it
+	// protects exactly as much as a missing header.
+	for _, value := range []string{"bogus-value", "strict-origin-when-cross-origi", "foo, bar"} {
+		t.Run(value, func(t *testing.T) {
+			findings := scanner.ReferrerPolicyChecker{}.Check(http.Header{"Referrer-Policy": {value}, "Content-Type": {"text/html"}}, testURL)
+			if findings[0].Status != scanner.StatusWeak {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+			}
+			if findings[0].Severity != scanner.SeverityLow {
+				t.Errorf("Severity = %q, want %q", findings[0].Severity, scanner.SeverityLow)
+			}
+			want := fmt.Sprintf("%q is not a recognized Referrer-Policy value and provides no protection", value)
+			if findings[0].Message != want {
+				t.Errorf("Message = %q, want %q", findings[0].Message, want)
+			}
+		})
+	}
+}
+
+func TestReferrerPolicyRecognizedTokenAmongUnknownsStaysPass(t *testing.T) {
+	findings := scanner.ReferrerPolicyChecker{}.Check(http.Header{"Referrer-Policy": {"foo, no-referrer"}}, testURL)
+	if findings[0].Status != scanner.StatusPass {
+		t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusPass)
 	}
 }
 
