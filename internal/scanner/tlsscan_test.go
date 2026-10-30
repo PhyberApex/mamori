@@ -215,3 +215,25 @@ func TestScanTLSVersionProbe(t *testing.T) {
 		}
 	})
 }
+
+func TestTLSVersionProbeHandshakeTimeoutIsAProbeFailure(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			t.Cleanup(func() { _ = c.Close() })
+		}
+	}()
+	u, _ := url.Parse("https://" + ln.Addr().String() + "/")
+	fs := (&scanner.TLSVersionProbe{Timeout: 100 * time.Millisecond}).Probe(t.Context(), u)
+	if len(fs) != 1 || fs[0].Status != scanner.StatusError || fs[0].Header == "TLS (protocol)" {
+		t.Fatalf("findings = %+v, want one probe-failed error, not a protocol pass", fs)
+	}
+}

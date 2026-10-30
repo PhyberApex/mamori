@@ -3,6 +3,7 @@ package scanner
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"net"
 	"net/url"
 	"strings"
@@ -29,8 +30,8 @@ type TLSVersionProbe struct {
 	// beyond the scan's own context.
 	Timeout time.Duration
 	// Wait, if non-nil, is called with the response URL's Host (the key
-	// RateLimitedTransport throttles by) before each handshake
-	// so the probe counts against -rate like every other request to that
+	// RateLimitedTransport throttles by) before each
+	// handshake so the probe counts against -rate like every other request to that
 	// host. It returns ctx's error if ctx is done first.
 	Wait func(ctx context.Context, host string) error
 }
@@ -66,9 +67,10 @@ func (p *TLSVersionProbe) Probe(ctx context.Context, respURL *url.URL) []Finding
 	f := Finding{Header: "TLS (protocol)", Status: StatusPass, Severity: SeverityMedium, Reference: certExpiryReference}
 	if len(accepted) > 0 {
 		f.Status = StatusInsecure
-		f.Message = "server accepts " + strings.Join(accepted, " and ") + ", both deprecated by RFC 8996"
 		if len(accepted) == 1 {
 			f.Message = "server accepts " + accepted[0] + ", deprecated by RFC 8996"
+		} else {
+			f.Message = "server accepts " + strings.Join(accepted, " and ") + ", both deprecated by RFC 8996"
 		}
 	}
 	return []Finding{f}
@@ -103,5 +105,12 @@ func (p *TLSVersionProbe) handshake(ctx context.Context, limiterHost, addr, serv
 		InsecureSkipVerify: true, //nolint:gosec // only the negotiated version is judged; see doc comment
 		ServerName:         serverName,
 	})
-	return client.HandshakeContext(ctx) == nil, nil
+	err = client.HandshakeContext(ctx)
+	// A timeout mid-handshake says nothing about whether the version is
+	// accepted, so it is a probe failure rather than a refusal.
+	var ne net.Error
+	if err != nil && (errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &ne) && ne.Timeout())) {
+		return false, err
+	}
+	return err == nil, nil
 }
