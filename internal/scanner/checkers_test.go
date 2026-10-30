@@ -1233,7 +1233,7 @@ func TestCSPAndFrameOptionsApplicableOnEveryContentType(t *testing.T) {
 }
 
 func TestFrameOptionsWithheldWhenCSPDeclaresFrameAncestors(t *testing.T) {
-	for _, csp := range []string{"frame-ancestors 'none'", "default-src 'self'; Frame-Ancestors *", "frame-ancestors"} {
+	for _, csp := range []string{"frame-ancestors 'none'", "default-src 'self'; Frame-Ancestors *", "frame-ancestors", "default-src 'self', frame-ancestors 'none'"} {
 		t.Run(csp, func(t *testing.T) {
 			h := http.Header{"Content-Security-Policy": {csp}}
 			if got := (scanner.FrameOptionsChecker{}).Check(h, testURL); len(got) != 0 {

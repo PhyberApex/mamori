@@ -180,7 +180,8 @@ func (FrameOptionsChecker) Check(headers http.Header, _ *url.URL) []Finding {
 // header carries a frame-ancestors directive, whatever its value.
 func declaresFrameAncestors(headers http.Header) bool {
 	for _, raw := range headers.Values("Content-Security-Policy") {
-		for _, directive := range strings.Split(raw, ";") {
+		// A comma joins several policies into one header value.
+		for _, directive := range strings.FieldsFunc(raw, func(r rune) bool { return r == ';' || r == ',' }) {
 			fields := strings.Fields(directive)
 			if len(fields) > 0 && strings.EqualFold(fields[0], "frame-ancestors") {
 				return true
