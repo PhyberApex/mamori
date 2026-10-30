@@ -111,10 +111,15 @@ func (HSTSChecker) Check(headers http.Header, respURL *url.URL) []Finding {
 	)
 }
 
+// hstsMinMaxAge is six months in seconds.
+const hstsMinMaxAge = 15552000
+
 // hstsWeakness flags an HSTS value whose max-age directive doesn't actually
 // enforce HTTPS: missing/unparseable (browsers ignore the header without a
 // valid max-age) or non-positive (max-age=0 tells the browser to stop
-// enforcing HTTPS immediately, which is a request to disable HSTS).
+// enforcing HTTPS immediately, which is a request to disable HSTS), or shorter
+// than six months (Mozilla Observatory's full-credit line), too short to
+// enforce HTTPS across visits. includeSubDomains and preload are not judged.
 func hstsWeakness(value string) (weak bool, message string) {
 	for _, directive := range strings.Split(value, ";") {
 		name, val, found := strings.Cut(strings.TrimSpace(directive), "=")
@@ -129,6 +134,9 @@ func hstsWeakness(value string) (weak bool, message string) {
 		}
 		if maxAge <= 0 {
 			return true, fmt.Sprintf("max-age=%d disables HSTS", maxAge)
+		}
+		if maxAge < hstsMinMaxAge {
+			return true, fmt.Sprintf("max-age=%d is below six months; OWASP recommends at least one year (31536000)", maxAge)
 		}
 		return false, ""
 	}
