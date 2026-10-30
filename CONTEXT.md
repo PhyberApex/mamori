@@ -21,7 +21,7 @@ The HTTP status code of the response a Finding was actually judged on, reported 
 _Avoid_: Error page, HTTP error — Final Status is not itself an error signal, just the status code of whatever response was judged; a 401/404/500 judged response can still carry an otherwise-passing Status.
 
 **Status**:
-Where a Finding landed after a Checker ran: `pass` (present and effective), `missing` (absent or blank), `weak` (present but a known no-op value, or one too weak to protect — e.g. an HSTS `max-age` below six months), `exposed` (a PathChecker's probed path was confirmed reachable), `insecure` (the judged response arrived over plain HTTP), `error` (the scan itself failed, e.g. an unreachable target).
+Where a Finding landed after a Checker ran: `pass` (present and effective), `missing` (absent or blank), `weak` (present but a known no-op value, or one too weak to protect — e.g. an HSTS `max-age` below six months — or a value no browser recognizes, such as a Referrer-Policy with no valid token), `exposed` (a PathChecker's probed path was confirmed reachable), `insecure` (the judged response arrived over plain HTTP), `error` (the scan itself failed, e.g. an unreachable target).
 _Avoid_: Result, Outcome.
 
 **PathChecker**:
