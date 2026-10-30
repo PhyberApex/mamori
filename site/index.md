@@ -20,7 +20,7 @@ Each check mamori performs is documented here. Every finding includes a link to 
 | `Cross-Origin-Resource-Policy` | medium | [docs](checks/cross-origin-resource-policy) |
 | `Set-Cookie` | high / medium | [docs](checks/set-cookie) |
 | `Permissions-Policy` | medium | [docs](checks/permissions-policy) |
-| `Server` / `X-Powered-By` | low | [docs](checks/banner-disclosure) |
+| `Server` / `X-Powered-By` / … | low | [docs](checks/banner-disclosure) |
 | `Access-Control-Allow-Origin` | high | [docs](checks/cors) |
 | `X-XSS-Protection` | low | [docs](checks/x-xss-protection) |
 | `<script>` / `<link>` (SRI) | low | [docs](checks/subresource-integrity) |

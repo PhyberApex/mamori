@@ -8,20 +8,22 @@ permalink: /checks/banner-disclosure
 
 ## What it does
 
-Checks the `Server` and `X-Powered-By` headers, which exist only to advertise the backend software (and often its version) handling the request. Unlike the other checks, presence — not absence — is the problem: this information helps an attacker fingerprint the stack and target known vulnerabilities for it.
+Checks the `Server` and `X-Powered-By` headers, plus the other stack-revealing headers on the OWASP Secure Headers Project "headers to remove" list (`X-AspNet-Version`, `X-AspNetMvc-Version`, `X-Php-Version`, `X-Generator`, `X-Powered-CMS`, `X-Powered-By-Plesk`, `X-Server-Powered-By`, `X-Umbraco-Version`, `X-Joomla-Version`), which exist only to advertise the backend software (and often its version) handling the request. Unlike the other checks, presence — not absence — is the problem: this information helps an attacker fingerprint the stack and target known vulnerabilities for it.
 
 ## Expected value
 
-Neither header should be sent at all:
+None of these headers should be sent at all:
 
 ```
 Server:
 X-Powered-By:
+X-AspNet-Version:
+X-Generator:
 ```
 
 ## What mamori checks
 
-Whether `Server` or `X-Powered-By` carries a non-empty value. A response with neither header produces no findings — absence is the desired state, so there's nothing to report. A present, non-empty value on either header is reported as a low-severity `WEAK` finding; a response can produce up to two findings, one per header.
+Whether any of the eleven headers above carries a non-empty value. A response with none of them produces no findings — absence is the desired state, so there's nothing to report. A present, non-empty value on any of them is reported as a low-severity `WEAK` finding, one per header. Proxy markers such as `Via`, `X-Varnish` and `X-Cache` are not checked: they reveal topology rather than software versions and have legitimate debugging uses.
 
 ## Further reading
 
