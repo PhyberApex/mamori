@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -666,12 +667,41 @@ func (PermissionsPolicyChecker) Check(headers http.Header, _ *url.URL) []Finding
 	if !isDocument(headers) {
 		return nil
 	}
-	return checkPresence(
+	return checkValue(
 		headers,
 		"Permissions-Policy",
 		SeverityMedium,
 		"https://owasp.org/www-project-secure-headers/#permissions-policy",
+		permissionsPolicyWeakness,
 	)
+}
+
+// sensitivePermissionsFeatures lists the features permissionsPolicyWeakness
+// judges. Features outside the list (e.g. fullscreen) are routinely granted
+// to any origin legitimately and are never flagged. A listed feature absent
+// from the header is not judged: its browser default is self, which is safe.
+var sensitivePermissionsFeatures = []string{"camera", "microphone", "geolocation", "display-capture", "payment", "usb"}
+
+// permissionsPolicyWeakness reports the first sensitive feature whose
+// allowlist contains the bare * token. Quoted origins, self, src and none
+// never match. The legacy Feature-Policy header is not judged.
+func permissionsPolicyWeakness(value string) (weak bool, message string) {
+	for _, directive := range strings.Split(value, ",") {
+		name, allowlist, found := strings.Cut(directive, "=")
+		if !found {
+			continue
+		}
+		name = strings.ToLower(strings.TrimSpace(name))
+		if !slices.Contains(sensitivePermissionsFeatures, name) {
+			continue
+		}
+		allowlist = strings.TrimSpace(allowlist)
+		allowlist = strings.TrimSuffix(strings.TrimPrefix(allowlist, "("), ")")
+		if slices.Contains(strings.Fields(allowlist), "*") {
+			return true, fmt.Sprintf("%s=* lets any embedded origin use the %s feature", name, name)
+		}
+	}
+	return false, ""
 }
 
 const bannerDisclosureReference = "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html"
