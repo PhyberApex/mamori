@@ -108,6 +108,9 @@ func TestHSTSWeakValues(t *testing.T) {
 
 func TestHSTSShortMaxAgeMessage(t *testing.T) {
 	findings := scanner.HSTSChecker{}.Check(http.Header{"Strict-Transport-Security": {`max-age="300"`}}, testURL)
+	if len(findings) != 1 {
+		t.Fatalf("Check() returned %d findings, want 1", len(findings))
+	}
 	want := "max-age=300 is below six months; OWASP recommends at least one year (31536000)"
 	if findings[0].Message != want {
 		t.Errorf("Message = %q, want %q", findings[0].Message, want)
