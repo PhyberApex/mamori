@@ -22,7 +22,9 @@ This denies these features to the page and any iframes it embeds. Most apps need
 
 ## What mamori checks
 
-Presence of the header. A missing header is reported as a medium-severity finding. mamori does not validate the Permissions-Policy value — that requires understanding which features your application actually needs.
+Presence of the header. A missing header is reported as a medium-severity finding.
+
+A present header is reported as weak when it grants one of these sensitive features to every origin with the bare `*` token (e.g. `camera=*` or `geolocation=(*)`): `camera`, `microphone`, `geolocation`, `display-capture`, `payment`, `usb`. Policies that name only `self` or specific origins, or omit the feature, pass. Other features (e.g. `fullscreen`) and the legacy `Feature-Policy` header are not judged.
 
 ## Further reading
 

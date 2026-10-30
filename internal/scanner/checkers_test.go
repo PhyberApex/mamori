@@ -1270,3 +1270,43 @@ func TestCSPFrameAncestorsWildcardIsWeak(t *testing.T) {
 		t.Errorf("Check() = %+v, want pass", got)
 	}
 }
+
+func TestPermissionsPolicyWeakness(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  scanner.Status
+	}{
+		{"CameraStar", "camera=*", scanner.StatusWeak},
+		{"GeolocationParenStar", "geolocation=(*)", scanner.StatusWeak},
+		{"StarAmongOrigins", `usb=(self *)`, scanner.StatusWeak},
+		{"LaterDirective", "fullscreen=(self), payment=*", scanner.StatusWeak},
+		{"DisplayCapture", "display-capture=*", scanner.StatusWeak},
+		{"Microphone", "microphone=*", scanner.StatusWeak},
+		{"UppercaseFeature", "Camera=*", scanner.StatusWeak},
+		{"SelfOnly", "camera=self", scanner.StatusPass},
+		{"SelfAndOrigin", `camera=(self "https://a.example")`, scanner.StatusPass},
+		{"None", "camera=()", scanner.StatusPass},
+		{"QuotedStar", `camera="*"`, scanner.StatusPass},
+		{"UnlistedFeature", "fullscreen=*", scanner.StatusPass},
+		{"FeatureAbsent", "accelerometer=()", scanner.StatusPass},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			findings := scanner.PermissionsPolicyChecker{}.Check(http.Header{"Permissions-Policy": {tt.value}}, testURL)
+			if findings[0].Status != tt.want {
+				t.Errorf("Status = %q, want %q", findings[0].Status, tt.want)
+			}
+			if tt.want == scanner.StatusWeak && findings[0].Message == "" {
+				t.Error("Message is empty")
+			}
+		})
+	}
+}
+
+func TestPermissionsPolicyWeaknessFirstHitWins(t *testing.T) {
+	findings := scanner.PermissionsPolicyChecker{}.Check(http.Header{"Permissions-Policy": {"camera=*, usb=*"}}, testURL)
+	if len(findings) != 1 || !strings.Contains(findings[0].Message, "camera") {
+		t.Errorf("findings = %+v, want one naming camera", findings)
+	}
+}

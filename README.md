@@ -14,7 +14,9 @@ or a redirect chain downgraded it from HTTPS — gets a dedicated `high`
 severity `insecure` finding. `X-Frame-Options` is likewise not judged on a
 response whose enforced `Content-Security-Policy` declares `frame-ancestors`,
 since browsers ignore the header then; `frame-ancestors *` is flagged as a weak
-CSP instead.
+CSP instead. `Permissions-Policy` is reported `weak` when it grants `camera`,
+`microphone`, `geolocation`, `display-capture`, `payment` or `usb` to every
+origin (a bare `*` in the allowlist); other features are never flagged.
 
 ## Install
 
