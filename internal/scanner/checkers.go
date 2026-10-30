@@ -712,10 +712,12 @@ func permissionsPolicyWeakness(value string) (weak bool, message string) {
 
 const bannerDisclosureReference = "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html"
 
-// BannerDisclosureChecker flags the Server and X-Powered-By headers whenever
-// they carry a value. There's no StatusPass/StatusMissing case here: absence
-// is the desired state and isn't itself worth reporting, so a response with
-// neither header produces no findings at all, mirroring how CookieChecker
+// BannerDisclosureChecker flags the Server and X-Powered-By headers, plus the
+// other backend-advertising headers on the OWASP Secure Headers Project
+// "headers to remove" list, whenever they carry a value. There's no
+// StatusPass/StatusMissing case here: absence is the desired state and isn't
+// itself worth reporting, so a response with none of them produces no findings
+// at all, mirroring how CookieChecker
 // treats a response with no cookies as having nothing to protect.
 type BannerDisclosureChecker struct{}
 
@@ -742,10 +744,15 @@ func (BannerDisclosureChecker) Check(headers http.Header, _ *url.URL) []Finding 
 }
 
 // bannerHeaderNames lists the headers BannerDisclosureChecker judges. Unlike
-// the other checkers, presence rather than absence is the finding: both
-// headers exist only to advertise backend software/version info, which is
+// the other checkers, presence rather than absence is the finding: every
+// listed header exists only to advertise backend software/version info, which is
 // useful to an attacker fingerprinting the stack and useful to nobody else.
-var bannerHeaderNames = []string{"Server", "X-Powered-By"}
+var bannerHeaderNames = []string{
+	"Server", "X-Powered-By",
+	"X-AspNet-Version", "X-AspNetMvc-Version", "X-Php-Version", "X-Generator",
+	"X-Powered-CMS", "X-Powered-By-Plesk", "X-Server-Powered-By",
+	"X-Umbraco-Version", "X-Joomla-Version",
+}
 
 // CORSProbeOrigin is the synthetic, definitely-foreign origin Scan sends as
 // the Origin header of the extra probe request CORSChecker needs (see

@@ -892,6 +892,41 @@ func TestBannerDisclosureFlagsXPoweredByHeader(t *testing.T) {
 	}
 }
 
+func TestBannerDisclosureFlagsOWASPHeadersToRemove(t *testing.T) {
+	for _, name := range []string{
+		"X-AspNet-Version", "X-AspNetMvc-Version", "X-Php-Version", "X-Generator",
+		"X-Powered-CMS", "X-Powered-By-Plesk", "X-Server-Powered-By",
+		"X-Umbraco-Version", "X-Joomla-Version",
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := http.Header{}
+			h.Set(name, "4.0.30319")
+			findings := scanner.BannerDisclosureChecker{}.Check(h, testURL)
+			if len(findings) != 1 {
+				t.Fatalf("Check() returned %d findings, want 1: %+v", len(findings), findings)
+			}
+			if findings[0].Header != name {
+				t.Errorf("Header = %q, want %q", findings[0].Header, name)
+			}
+			if findings[0].Status != scanner.StatusWeak {
+				t.Errorf("Status = %q, want %q", findings[0].Status, scanner.StatusWeak)
+			}
+			if findings[0].Severity != scanner.SeverityLow {
+				t.Errorf("Severity = %q, want %q", findings[0].Severity, scanner.SeverityLow)
+			}
+		})
+	}
+}
+
+func TestBannerDisclosureIgnoresProxyMarkers(t *testing.T) {
+	findings := scanner.BannerDisclosureChecker{}.Check(http.Header{
+		"Via": {"1.1 varnish"}, "X-Varnish": {"123"}, "X-Cache": {"HIT"},
+	}, testURL)
+	if len(findings) != 0 {
+		t.Errorf("Check() on proxy marker headers returned %d findings, want 0: %+v", len(findings), findings)
+	}
+}
+
 func TestBannerDisclosureFlagsBothHeaders(t *testing.T) {
 	findings := scanner.BannerDisclosureChecker{}.Check(http.Header{
 		"Server":       {"nginx/1.18.0"},
