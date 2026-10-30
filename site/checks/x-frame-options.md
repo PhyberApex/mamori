@@ -29,6 +29,8 @@ X-Frame-Options: SAMEORIGIN
 
 Presence of the header, and that its value is one of the two the spec defines. A missing header is reported as a medium-severity finding. A present header with any value other than `DENY`/`SAMEORIGIN` (case-insensitive) — including `ALLOW-FROM`, which modern browsers ignore — is reported as `WEAK`, since it provides no clickjacking protection.
 
+If the response's enforced `Content-Security-Policy` declares a `frame-ancestors` directive (any value), mamori reports nothing for `X-Frame-Options`: browsers ignore the header whenever `frame-ancestors` is present. `Content-Security-Policy-Report-Only` does not count. A permissive `frame-ancestors *` is flagged by the [Content-Security-Policy check](content-security-policy) instead.
+
 ## Further reading
 
 - [MDN: X-Frame-Options](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-Options)

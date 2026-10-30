@@ -18,3 +18,5 @@ mamori is used against JSON APIs as well as pages, and a Checker for a header th
 - A Checker already receives the response headers, so it reads `Content-Type` itself; the Checker interface does not change.
 - There is no setting that runs every Checker regardless of content type. A need for one is a new decision, not a missing flag.
 - The SRI and mixed-content BodyCheckers are unaffected: they already find nothing in a body with no markup, and the body is fetched before its type is known.
+
+Amended by [ADR-0004](0004-applicable-judged-by-declared-frame-ancestors.md): X-Frame-Options is no longer applicable to a response whose enforced Content-Security-Policy declares `frame-ancestors`.

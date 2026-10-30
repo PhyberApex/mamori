@@ -158,7 +158,15 @@ func contentTypeOptionsWeakness(value string) (weak bool, message string) {
 
 type FrameOptionsChecker struct{}
 
+// Check returns no Finding at all when an enforced Content-Security-Policy
+// declares frame-ancestors (CONTEXT.md, ADR-0004): browsers discard
+// X-Frame-Options whenever that directive is present, so the header cannot
+// have any effect. Content-Security-Policy-Report-Only enforces nothing and
+// never withholds the Finding.
 func (FrameOptionsChecker) Check(headers http.Header, _ *url.URL) []Finding {
+	if declaresFrameAncestors(headers) {
+		return nil
+	}
 	return checkValue(
 		headers,
 		"X-Frame-Options",
@@ -166,6 +174,21 @@ func (FrameOptionsChecker) Check(headers http.Header, _ *url.URL) []Finding {
 		"https://cheatsheetseries.owasp.org/cheatsheets/Clickjacking_Defense_Cheat_Sheet.html",
 		frameOptionsWeakness,
 	)
+}
+
+// declaresFrameAncestors reports whether any enforced Content-Security-Policy
+// header carries a frame-ancestors directive, whatever its value.
+func declaresFrameAncestors(headers http.Header) bool {
+	for _, raw := range headers.Values("Content-Security-Policy") {
+		// A comma joins several policies into one header value.
+		for _, directive := range strings.FieldsFunc(raw, func(r rune) bool { return r == ';' || r == ',' }) {
+			fields := strings.Fields(directive)
+			if len(fields) > 0 && strings.EqualFold(fields[0], "frame-ancestors") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // frameOptionsWeakness flags any value other than DENY/SAMEORIGIN: modern
@@ -249,6 +272,9 @@ func cspWeakness(value string) (weak bool, message string) {
 			case "'unsafe-eval'":
 				return true, fmt.Sprintf("%s allows 'unsafe-eval', which permits string-to-code execution (eval, Function, etc.)", name)
 			case "*":
+				if name == "frame-ancestors" {
+					return true, "frame-ancestors allows * which permits framing from any origin, defeating clickjacking protection"
+				}
 				if !wildcardSensitiveDirectives[name] {
 					continue
 				}

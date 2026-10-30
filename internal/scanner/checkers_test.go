@@ -1231,3 +1231,42 @@ func TestCSPAndFrameOptionsApplicableOnEveryContentType(t *testing.T) {
 		})
 	}
 }
+
+func TestFrameOptionsWithheldWhenCSPDeclaresFrameAncestors(t *testing.T) {
+	for _, csp := range []string{"frame-ancestors 'none'", "default-src 'self'; Frame-Ancestors *", "frame-ancestors", "default-src 'self', frame-ancestors 'none'"} {
+		t.Run(csp, func(t *testing.T) {
+			h := http.Header{"Content-Security-Policy": {csp}}
+			if got := (scanner.FrameOptionsChecker{}).Check(h, testURL); len(got) != 0 {
+				t.Errorf("Check() = %+v, want none", got)
+			}
+		})
+	}
+}
+
+func TestFrameOptionsStillJudgedWithoutEnforcedFrameAncestors(t *testing.T) {
+	for name, h := range map[string]http.Header{
+		"report-only":       {"Content-Security-Policy-Report-Only": {"frame-ancestors 'none'"}},
+		"csp without it":    {"Content-Security-Policy": {"default-src 'self'"}},
+		"similar directive": {"Content-Security-Policy": {"frame-src 'self'"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := (scanner.FrameOptionsChecker{}).Check(h, testURL)
+			if len(got) != 1 || got[0].Status != scanner.StatusMissing {
+				t.Errorf("Check() = %+v, want one missing finding", got)
+			}
+		})
+	}
+}
+
+func TestCSPFrameAncestorsWildcardIsWeak(t *testing.T) {
+	h := http.Header{"Content-Security-Policy": {"default-src 'self'; frame-ancestors *"}}
+	got := (scanner.CSPChecker{}).Check(h, testURL)
+	if len(got) != 1 || got[0].Status != scanner.StatusWeak ||
+		!strings.Contains(got[0].Message, "frame-ancestors allows * which permits framing from any origin, defeating clickjacking protection") {
+		t.Errorf("Check() = %+v, want weak frame-ancestors finding", got)
+	}
+	h = http.Header{"Content-Security-Policy": {"default-src 'self'; frame-ancestors 'none'"}}
+	if got := (scanner.CSPChecker{}).Check(h, testURL); len(got) != 1 || got[0].Status != scanner.StatusPass {
+		t.Errorf("Check() = %+v, want pass", got)
+	}
+}
