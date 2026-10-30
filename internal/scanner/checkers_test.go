@@ -1310,3 +1310,32 @@ func TestPermissionsPolicyWeaknessFirstHitWins(t *testing.T) {
 		t.Errorf("findings = %+v, want one naming camera", findings)
 	}
 }
+
+func TestCSPReportOnlyAloneIsMissingWithMessage(t *testing.T) {
+	h := http.Header{"Content-Security-Policy-Report-Only": {"default-src 'self'"}}
+	got := (scanner.CSPChecker{}).Check(h, testURL)
+	if len(got) != 1 || got[0].Status != scanner.StatusMissing ||
+		got[0].Severity != scanner.SeverityHigh ||
+		got[0].Header != "Content-Security-Policy" ||
+		got[0].Message != "only Content-Security-Policy-Report-Only is set, which reports violations but enforces nothing" {
+		t.Errorf("Check() = %+v, want missing finding naming report-only", got)
+	}
+}
+
+func TestCSPReportOnlyIgnoredWhenEnforcedPresent(t *testing.T) {
+	h := http.Header{
+		"Content-Security-Policy":             {"default-src 'self'"},
+		"Content-Security-Policy-Report-Only": {"default-src *"},
+	}
+	got := (scanner.CSPChecker{}).Check(h, testURL)
+	if len(got) != 1 || got[0].Status != scanner.StatusPass || got[0].Message != "" {
+		t.Errorf("Check() = %+v, want plain pass", got)
+	}
+}
+
+func TestCSPNoHeadersHasNoMessage(t *testing.T) {
+	got := (scanner.CSPChecker{}).Check(http.Header{}, testURL)
+	if len(got) != 1 || got[0].Status != scanner.StatusMissing || got[0].Message != "" {
+		t.Errorf("Check() = %+v, want bare missing", got)
+	}
+}
