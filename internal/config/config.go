@@ -264,13 +264,20 @@ func validateHookTimeout(d time.Duration) error {
 	return nil
 }
 
+// maxCertExpiryDays is the largest accepted -cert-expiry-days (100 years).
+const maxCertExpiryDays = 36500
+
 // validateCertExpiryDays reports whether n satisfies the "positive integer"
 // rule the config-file, env, and flag layers all enforce for
 // -cert-expiry-days, mirroring validateWorkers: a zero or negative threshold
 // has no sensible meaning here, unlike -rate's "0 means unlimited" sentinel.
+//
+// The upper bound keeps the days-to-time.Duration conversion from overflowing
+// int64 nanoseconds (about 106751 days), which would wrap to a negative
+// threshold and silently disable the check.
 func validateCertExpiryDays(n int) error {
-	if n < 1 {
-		return fmt.Errorf("%d is not a positive integer", n)
+	if n < 1 || n > maxCertExpiryDays {
+		return fmt.Errorf("%d is not an integer from 1 to %d", n, maxCertExpiryDays)
 	}
 	return nil
 }
@@ -321,7 +328,7 @@ func registerFlags(cfg *Config) (*flag.FlagSet, *string) {
 	fs.StringVar(&cfg.PostScanHook, "post-scan-hook", cfg.PostScanHook, "shell command to run once after the scan completes")
 	fs.DurationVar(&cfg.HookTimeout, "hook-timeout", cfg.HookTimeout, "timeout for -pre-scan-hook/-post-scan-hook (e.g. 30s)")
 	fs.StringVar(&cfg.BaselinePath, "baseline", cfg.BaselinePath, "path to a previously saved -o json scan (NDJSON); findings matching one by URL, header, and status are marked known and exempt from -fail-on")
-	fs.IntVar(&cfg.CertExpiryDays, "cert-expiry-days", cfg.CertExpiryDays, "flag a target's TLS certificate as expiring once it's within this many days of its expiry")
+	fs.IntVar(&cfg.CertExpiryDays, "cert-expiry-days", cfg.CertExpiryDays, "flag a target's TLS certificate as expiring once it's within this many days of its expiry (1-36500)")
 	fs.BoolVar(&cfg.CheckTLSVersions, "check-tls-versions", cfg.CheckTLSVersions, "probe each HTTPS target's host with TLS 1.0 and 1.1 handshakes and report whether it still accepts them; off by default since it issues handshakes beyond the scan request itself")
 	var configPath string
 	fs.StringVar(&configPath, "config", "", "path to YAML config file (env MAMORI_CONFIG; default: .mamori.yaml in the working directory if present)")
@@ -416,7 +423,7 @@ func Resolve(args []string, getenv func(string) string) (Config, []string, error
 	if v := getenv("MAMORI_CERT_EXPIRY_DAYS"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || validateCertExpiryDays(n) != nil {
-			return Config{}, nil, fmt.Errorf("MAMORI_CERT_EXPIRY_DAYS: %q is not a positive integer", v)
+			return Config{}, nil, fmt.Errorf("MAMORI_CERT_EXPIRY_DAYS: %q is not an integer from 1 to %d", v, maxCertExpiryDays)
 		}
 		cfg.CertExpiryDays = n
 	}
