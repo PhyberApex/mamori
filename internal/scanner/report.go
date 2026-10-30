@@ -68,6 +68,47 @@ func statusTag(f Finding, color bool) string {
 	return colorize(color, c, "MISSING")
 }
 
+// targetGrade derives a target's letter grade from the highest Severity among
+// its gating Findings (Fails at the lowest threshold, i.e. not pass, not
+// Suppressed, not Known): none → A, low → B, medium → C, high → D. ok is
+// false when any Finding is a StatusError, since nothing was judged — and
+// when an error is Suppressed or Known it is still an error, so the check
+// looks at Status directly.
+func targetGrade(fs []Finding) (grade string, ok bool) {
+	grade = "A"
+	for _, f := range fs {
+		if f.Status == StatusError {
+			return "", false
+		}
+		if !f.Fails(SeverityLow) {
+			continue
+		}
+		switch f.Severity {
+		case SeverityHigh:
+			grade = "D"
+		case SeverityMedium:
+			if grade != "D" {
+				grade = "C"
+			}
+		default:
+			if grade == "A" {
+				grade = "B"
+			}
+		}
+	}
+	return grade, true
+}
+
+func gradeColor(grade string) string {
+	switch grade {
+	case "A":
+		return ansiGreen
+	case "D":
+		return ansiRed
+	}
+	return ansiYellow
+}
+
 // distinctFinalURLs returns the non-empty FinalURL values among fs, each
 // once, in first-encountered order. Ordinarily at most one: the plain scan
 // response and the CORS-probe response usually land on the same redirect
@@ -129,7 +170,11 @@ func (t TerminalReporter) Report(findings []Finding, w io.Writer) error {
 	}
 
 	for _, url := range urls {
-		if _, err := fmt.Fprintf(w, "%s\n", colorize(t.Color, ansiBold, url)); err != nil {
+		header := colorize(t.Color, ansiBold, url)
+		if g, ok := targetGrade(byURL[url]); ok {
+			header += "  grade " + colorize(t.Color, gradeColor(g), g)
+		}
+		if _, err := fmt.Fprintf(w, "%s\n", header); err != nil {
 			return err
 		}
 		for _, final := range distinctFinalURLs(byURL[url]) {
