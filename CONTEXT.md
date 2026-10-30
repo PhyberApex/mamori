@@ -60,6 +60,10 @@ _Avoid_: Ignore rule, Allowlist entry — "allowlist" implies default-deny seman
 A saved earlier scan — plain `-o json` output, no dedicated format — passed back with `-baseline` so `-fail-on` gates only on what changed since. It exempts Findings from the gate and does nothing else: a Finding in the Baseline that no longer appears is not reported.
 _Avoid_: Snapshot, Allowlist — a Baseline records what a scan found, not what is permitted; accepting a risk on purpose is a Suppression.
 
+**Grade**:
+A letter on each target's header line in the terminal report, from the highest Severity among the target's gating Findings (not `pass`, not Suppressed, not Known): none → `A`, `low` → `B`, `medium` → `C`, `high` → `D`. A target with any `error` Finding has no Grade, since nothing was judged. Terminal only — JSON and SARIF do not carry it; it is derivable from the Findings.
+_Avoid_: Score, Rating — there is no number and no `F`; the Grade is always explainable from the lines beneath it.
+
 **Known**:
 A Finding that was already present in the Baseline, matched on target URL, `header` and Status — Severity and message are not compared, so a Finding that moves from `missing` to `weak` is new, while a reworded message is not. A Known Finding is excluded from `-fail-on` gating but stays visible in output, tagged rather than deleted. Known is independent of Suppression: a Finding can be both, either one exempts it, and both tags are rendered.
 _Avoid_: Baselined, Existing, Old — Known says what the reader needs (this was already there last time) without implying it is accepted, which is what a Suppression is for.

@@ -65,7 +65,7 @@ echo "https://example.com" | mamori
 Example output:
 
 ```
-https://example.com
+https://example.com  grade D
   [MISSING] Strict-Transport-Security (high) → https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Strict_Transport_Security_Cheat_Sheet.html
   [PASS] X-Content-Type-Options (medium)
   [MISSING] X-Frame-Options (medium) → https://cheatsheetseries.owasp.org/cheatsheets/Clickjacking_Defense_Cheat_Sheet.html
@@ -85,6 +85,12 @@ finding, then — only when `-fail-on` is set to something other than `none` —
 described below. Any clause with nothing to show is omitted entirely, so a
 scan with no non-pass findings and no `-fail-on` prints just the target
 count. `-o json` and `-o sarif` are unaffected — the summary is terminal-only.
+
+Each target's header line also carries a letter grade (`grade A` … `grade D`)
+from the highest severity among its gating findings — those that are not
+`pass`, `suppressed` or `known`: none → `A`, `low` → `B`, `medium` → `C`,
+`high` → `D`. A target with any `error` finding gets no grade. Like the
+summary, the grade is terminal-only; JSON and SARIF are unchanged.
 
 Full reference for every check mamori performs is available at
 [phyberapex.github.io/mamori](https://phyberapex.github.io/mamori/).

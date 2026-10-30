@@ -1078,3 +1078,57 @@ func TestTerminalReporterRendersMessageOnMissing(t *testing.T) {
 		t.Errorf("output missing %q\noutput:\n%s", want, buf.String())
 	}
 }
+
+func gradeHeader(t *testing.T, color bool, fs ...scanner.Finding) string {
+	t.Helper()
+	for i := range fs {
+		fs[i].URL = "https://g.example"
+	}
+	var buf bytes.Buffer
+	if err := (scanner.TerminalReporter{Color: color}).Report(fs, &buf); err != nil {
+		t.Fatalf("Report() returned error: %v", err)
+	}
+	return strings.SplitN(buf.String(), "\n", 2)[0]
+}
+
+func TestTerminalReporterGradeFromWorstGatingFinding(t *testing.T) {
+	missing := func(s scanner.Severity) scanner.Finding {
+		return scanner.Finding{Header: "H", Status: scanner.StatusMissing, Severity: s}
+	}
+	pass := scanner.Finding{Header: "P", Status: scanner.StatusPass, Severity: scanner.SeverityHigh}
+	suppressed := missing(scanner.SeverityHigh)
+	suppressed.Suppressed = true
+	known := missing(scanner.SeverityHigh)
+	known.Known = true
+
+	tests := []struct {
+		name string
+		fs   []scanner.Finding
+		want string
+	}{
+		{"clean", []scanner.Finding{pass}, "https://g.example  grade A"},
+		{"suppressed and known ignored", []scanner.Finding{pass, suppressed, known}, "https://g.example  grade A"},
+		{"low", []scanner.Finding{pass, missing(scanner.SeverityLow)}, "https://g.example  grade B"},
+		{"medium", []scanner.Finding{missing(scanner.SeverityLow), missing(scanner.SeverityMedium)}, "https://g.example  grade C"},
+		{"high", []scanner.Finding{missing(scanner.SeverityMedium), missing(scanner.SeverityHigh)}, "https://g.example  grade D"},
+		{"error means no grade", []scanner.Finding{missing(scanner.SeverityHigh), {Header: "E", Status: scanner.StatusError}}, "https://g.example"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := gradeHeader(t, false, tt.fs...); got != tt.want {
+				t.Errorf("header = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTerminalReporterGradeColour(t *testing.T) {
+	pass := scanner.Finding{Header: "P", Status: scanner.StatusPass}
+	hi := scanner.Finding{Header: "H", Status: scanner.StatusMissing, Severity: scanner.SeverityHigh}
+	if got, want := gradeHeader(t, true, pass), "\x1b[1mhttps://g.example\x1b[0m  grade \x1b[32mA\x1b[0m"; got != want {
+		t.Errorf("A: %q, want %q", got, want)
+	}
+	if got, want := gradeHeader(t, true, hi), "\x1b[1mhttps://g.example\x1b[0m  grade \x1b[31mD\x1b[0m"; got != want {
+		t.Errorf("D: %q, want %q", got, want)
+	}
+}
