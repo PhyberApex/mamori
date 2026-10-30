@@ -237,6 +237,11 @@ func setFinalURL(fs []Finding, targetURL string, respURL *url.URL) {
 	if final == targetURL {
 		return
 	}
+	// A typed target that net/url would re-serialize (uppercase scheme,
+	// unescaped space) is not a redirect: compare against its canonical form.
+	if parsed, err := url.Parse(targetURL); err == nil && final == parsed.String() {
+		return
+	}
 	for i := range fs {
 		fs[i].FinalURL = final
 	}

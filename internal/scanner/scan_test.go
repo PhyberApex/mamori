@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -282,6 +283,33 @@ func TestScanSetsFinalURLOnlyWhenTheScanResponseRedirects(t *testing.T) {
 			t.Errorf("FinalURL = %q, want empty (no redirect)", f.FinalURL)
 		}
 	})
+}
+
+// TestScanNonCanonicalTargetCarriesNoFinalURL: a target typed in a valid but
+// non-canonical form (net/url re-serializes it) is not a redirect.
+func TestScanNonCanonicalTargetCarriesNoFinalURL(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	t.Cleanup(srv.Close)
+
+	for name, target := range map[string]string{
+		"uppercase scheme": "HTTP" + strings.TrimPrefix(srv.URL, "http") + "/",
+		"space in path":    srv.URL + "/a b",
+		"fragment":         srv.URL + "/#frag",
+	} {
+		t.Run(name, func(t *testing.T) {
+			findings := scanner.Scan(t.Context(), srv.Client(), []scanner.Checker{scanner.TransportChecker{}}, nil, nil, nil, []string{target}, 1, nil)
+			if len(findings) != 1 {
+				t.Fatalf("Scan() returned %d findings, want 1: %+v", len(findings), findings)
+			}
+			f := findings[0]
+			if f.URL != target {
+				t.Errorf("URL = %q, want %q", f.URL, target)
+			}
+			if f.FinalURL != "" {
+				t.Errorf("FinalURL = %q, want empty (no redirect)", f.FinalURL)
+			}
+		})
+	}
 }
 
 // TestScanPathCheckerFindingsNeverCarryFinalURL covers the acceptance
