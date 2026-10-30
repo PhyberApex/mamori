@@ -108,6 +108,11 @@ type Config struct {
 	// checker itself is always on — this only tunes its threshold — so
 	// there's no separate enable flag/field.
 	CertExpiryDays int
+	// CheckTLSVersions turns on the TLS legacy-protocol probe (ADR-0005):
+	// extra handshakes against each target's host to see whether it still
+	// accepts TLS 1.0/1.1. Off by default for the same reason as
+	// CheckExposedPaths — it issues requests the user did not ask for.
+	CheckTLSVersions bool
 }
 
 // Headers is http.Header under the flag package's Value contract: a defined
@@ -317,6 +322,7 @@ func registerFlags(cfg *Config) (*flag.FlagSet, *string) {
 	fs.DurationVar(&cfg.HookTimeout, "hook-timeout", cfg.HookTimeout, "timeout for -pre-scan-hook/-post-scan-hook (e.g. 30s)")
 	fs.StringVar(&cfg.BaselinePath, "baseline", cfg.BaselinePath, "path to a previously saved -o json scan (NDJSON); findings matching one by URL, header, and status are marked known and exempt from -fail-on")
 	fs.IntVar(&cfg.CertExpiryDays, "cert-expiry-days", cfg.CertExpiryDays, "flag a target's TLS certificate as expiring once it's within this many days of its expiry")
+	fs.BoolVar(&cfg.CheckTLSVersions, "check-tls-versions", cfg.CheckTLSVersions, "probe each HTTPS target's host with TLS 1.0 and 1.1 handshakes and report whether it still accepts them; off by default since it issues handshakes beyond the scan request itself")
 	var configPath string
 	fs.StringVar(&configPath, "config", "", "path to YAML config file (env MAMORI_CONFIG; default: .mamori.yaml in the working directory if present)")
 	return fs, &configPath
@@ -383,6 +389,13 @@ func Resolve(args []string, getenv func(string) string) (Config, []string, error
 			return Config{}, nil, fmt.Errorf("MAMORI_CHECK_EXPOSED_PATHS: %q is not a valid boolean (true/false)", v)
 		}
 		cfg.CheckExposedPaths = b
+	}
+	if v := getenv("MAMORI_CHECK_TLS_VERSIONS"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return Config{}, nil, fmt.Errorf("MAMORI_CHECK_TLS_VERSIONS: %q is not a valid boolean (true/false)", v)
+		}
+		cfg.CheckTLSVersions = b
 	}
 	if v := getenv("MAMORI_PRE_SCAN_HOOK"); v != "" {
 		cfg.PreScanHook = v

@@ -121,6 +121,13 @@ func NewRateLimitedTransport(base http.RoundTripper, rate float64, timeout time.
 	return &RateLimitedTransport{Base: base, Timeout: timeout, limiter: newHostLimiter(rate)}
 }
 
+// Wait blocks until it is host's turn under the same per-host limiter
+// RoundTrip uses, for callers that make requests outside the transport (the
+// TLS version probe's raw handshakes) but must still count against -rate.
+func (t *RateLimitedTransport) Wait(ctx context.Context, host string) error {
+	return t.limiter.wait(ctx, host)
+}
+
 func (t *RateLimitedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err := t.limiter.wait(req.Context(), req.URL.Host); err != nil {
 		return nil, err

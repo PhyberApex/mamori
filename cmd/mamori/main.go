@@ -148,6 +148,10 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 	// when it's set, so the default User-Agent applies to every request
 	// either way.
 	var base http.RoundTripper
+	var tlsProbe *scanner.TLSVersionProbe
+	if cfg.CheckTLSVersions {
+		tlsProbe = &scanner.TLSVersionProbe{Timeout: cfg.Timeout}
+	}
 	if cfg.Rate > 0 {
 		// client.Timeout alone can't be reused here: it starts counting
 		// from Do(), before the limiter even runs, so it would wrongly
@@ -159,12 +163,18 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 		// section), so this can't be collapsed into a single code path
 		// that behaves identically whether or not -rate is set.
 		client.Timeout = 0
-		base = scanner.NewRateLimitedTransport(nil, cfg.Rate, cfg.Timeout)
+		rl := scanner.NewRateLimitedTransport(nil, cfg.Rate, cfg.Timeout)
+		base = rl
+		if tlsProbe != nil {
+			// The probe's handshakes count against -rate for the host,
+			// through the same limiter the scan requests use.
+			tlsProbe.Wait = rl.Wait
+		}
 	}
 	client.Transport = scanner.NewUserAgentTransport(base, version)
 	pathCheckers := scanner.PathCheckersFor(cfg.CheckExposedPaths, cfg.ExtraExposedPaths)
 	tlsCheckers := scanner.DefaultTLSCheckers(time.Duration(cfg.CertExpiryDays) * 24 * time.Hour)
-	findings := scanner.Scan(scanCtx, client, scanner.DefaultCheckers(), scanner.DefaultBodyCheckers(), pathCheckers, tlsCheckers, urls, cfg.Workers, http.Header(cfg.Headers))
+	findings := scanner.Scan(scanCtx, client, scanner.DefaultCheckers(), scanner.DefaultBodyCheckers(), pathCheckers, tlsCheckers, urls, cfg.Workers, http.Header(cfg.Headers), scanner.WithTLSVersionProbe(tlsProbe))
 	interrupted := scanCtx.Err() != nil
 	// Stop watching for signals the instant the scan phase ends, win or
 	// lose: the handler above is scoped to "around the scan phase" only, so

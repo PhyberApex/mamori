@@ -107,6 +107,7 @@ Full reference for every check mamori performs is available at
 | `-hook-timeout` | `30s` | timeout for `-pre-scan-hook`/`-post-scan-hook` |
 | `-baseline` | *(none)* | path to a previously saved `-o json` scan (NDJSON); matching findings are marked known and exempt from `-fail-on` |
 | `-cert-expiry-days` | `30` | flag a target's TLS certificate as expiring once it's within this many days of its expiry |
+| `-check-tls-versions` | `false` | probe each HTTPS target's host with TLS 1.0 and TLS 1.1 handshakes and report whether it still accepts them |
 | `-v`, `-version` | `false` | print the version and exit, performing no scan |
 
 `-o json` emits newline-delimited JSON, one finding per line.
@@ -195,6 +196,20 @@ this checker at all (TransportChecker's own finding already covers it), and
 an already-expired certificate never reaches it either: Go's HTTP client
 refuses the handshake first, surfacing as the existing `error` finding.
 
+`-check-tls-versions` turns on an additional, opt-in check: for each target
+whose judged (final, post-redirect) response arrived over HTTPS, mamori makes
+one extra TLS handshake pinned to TLS 1.0 and one pinned to TLS 1.1 against
+that response's host and reports a single `TLS (protocol)` finding —
+`insecure` at `medium` severity naming the legacy version(s) the server
+accepted (both are deprecated by RFC 8996), or `pass` when both are refused.
+It is off by default because it issues handshakes the user never asked for
+on the target. Each handshake is bound by `-timeout`, counts against `-rate`
+for that host, and is cancelled by an interrupt. If the connection can't be
+established at all (connection refused, DNS failure, timeout) the target gets
+one `error` finding, `TLS version probe failed: ...`, and no `TLS (protocol)`
+finding. Certificate validity is not judged here, and cipher-suite weakness
+is out of scope. See ADR-0005.
+
 `-baseline` points at a previously saved scan — exactly `-o json`'s own
 output, NDJSON, one `Finding` per line — and marks every current finding with
 an exactly matching `url`, `header`, and `status` as known: `known: true` in
@@ -278,6 +293,7 @@ precedence.
 | `MAMORI_HOOK_TIMEOUT` | `-hook-timeout` |
 | `MAMORI_BASELINE` | `-baseline` |
 | `MAMORI_CERT_EXPIRY_DAYS` | `-cert-expiry-days` |
+| `MAMORI_CHECK_TLS_VERSIONS` | `-check-tls-versions` |
 
 `-exposed-path` has no environment variable equivalent, the same as `-H`.
 
@@ -297,6 +313,7 @@ targets:
 checkExposedPaths: true
 exposedPaths:
   - debug.log
+checkTLSVersions: true
 suppressions:
   - header: Content-Security-Policy
     host: https://cdn.example.com
