@@ -267,10 +267,10 @@ func validateHookTimeout(d time.Duration) error {
 // maxCertExpiryDays is the largest accepted -cert-expiry-days (100 years).
 const maxCertExpiryDays = 36500
 
-// validateCertExpiryDays reports whether n satisfies the "positive integer"
-// rule the config-file, env, and flag layers all enforce for
-// -cert-expiry-days, mirroring validateWorkers: a zero or negative threshold
-// has no sensible meaning here, unlike -rate's "0 means unlimited" sentinel.
+// validateCertExpiryDays reports whether n is within 1..maxCertExpiryDays, the
+// range the config-file, env, and flag layers all enforce for
+// -cert-expiry-days: a zero or negative threshold has no sensible meaning
+// here, unlike -rate's "0 means unlimited" sentinel.
 //
 // The upper bound keeps the days-to-time.Duration conversion from overflowing
 // int64 nanoseconds (about 106751 days), which would wrap to a negative
@@ -328,7 +328,7 @@ func registerFlags(cfg *Config) (*flag.FlagSet, *string) {
 	fs.StringVar(&cfg.PostScanHook, "post-scan-hook", cfg.PostScanHook, "shell command to run once after the scan completes")
 	fs.DurationVar(&cfg.HookTimeout, "hook-timeout", cfg.HookTimeout, "timeout for -pre-scan-hook/-post-scan-hook (e.g. 30s)")
 	fs.StringVar(&cfg.BaselinePath, "baseline", cfg.BaselinePath, "path to a previously saved -o json scan (NDJSON); findings matching one by URL, header, and status are marked known and exempt from -fail-on")
-	fs.IntVar(&cfg.CertExpiryDays, "cert-expiry-days", cfg.CertExpiryDays, "flag a target's TLS certificate as expiring once it's within this many days of its expiry (1-36500)")
+	fs.IntVar(&cfg.CertExpiryDays, "cert-expiry-days", cfg.CertExpiryDays, fmt.Sprintf("flag a target's TLS certificate as expiring once it's within this many days of its expiry (1-%d)", maxCertExpiryDays))
 	fs.BoolVar(&cfg.CheckTLSVersions, "check-tls-versions", cfg.CheckTLSVersions, "probe each HTTPS target's host with TLS 1.0 and 1.1 handshakes and report whether it still accepts them; off by default since it issues handshakes beyond the scan request itself")
 	var configPath string
 	fs.StringVar(&configPath, "config", "", "path to YAML config file (env MAMORI_CONFIG; default: .mamori.yaml in the working directory if present)")
