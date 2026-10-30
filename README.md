@@ -114,7 +114,7 @@ Full reference for every check mamori performs is available at
 | `-post-scan-hook` | *(none)* | shell command to run once after the scan completes |
 | `-hook-timeout` | `30s` | timeout for `-pre-scan-hook`/`-post-scan-hook` |
 | `-baseline` | *(none)* | path to a previously saved `-o json` scan (NDJSON); matching findings are marked known and exempt from `-fail-on` |
-| `-cert-expiry-days` | `30` | flag a target's TLS certificate as expiring once it's within this many days of its expiry |
+| `-cert-expiry-days` | `30` | flag a target's TLS certificate as expiring once it's within this many days of its expiry (1–36500) |
 | `-check-tls-versions` | `false` | probe each HTTPS target's host with TLS 1.0 and TLS 1.1 handshakes and report whether it still accepts them |
 | `-v`, `-version` | `false` | print the version and exit, performing no scan |
 

@@ -241,6 +241,13 @@ func TestResolveConfigFileRejectsNonPositiveCertExpiryDays(t *testing.T) {
 	}
 }
 
+func TestResolveConfigFileRejectsOverflowingCertExpiryDays(t *testing.T) {
+	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `certExpiryDays: 200000`)
+	if _, _, err := config.Resolve([]string{"-config", path}, noEnv); err == nil {
+		t.Error("Resolve() with certExpiryDays: 200000 in config file returned nil error, want error")
+	}
+}
+
 func TestResolveEnvVarOverridesConfigFileCertExpiryDays(t *testing.T) {
 	path := writeConfigFile(t, t.TempDir(), "mamori.yaml", `certExpiryDays: 10`)
 

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -337,6 +338,24 @@ func TestResolveRejectsNonPositiveCertExpiryDaysFlag(t *testing.T) {
 	}
 }
 
+func TestResolveRejectsOverflowingCertExpiryDaysFlag(t *testing.T) {
+	_, _, err := config.Resolve([]string{"-cert-expiry-days", "200000"}, noEnv)
+	if err == nil {
+		t.Fatal("Resolve() with -cert-expiry-days 200000 returned nil error, want error")
+	}
+	if !strings.Contains(err.Error(), "1 to 36500") {
+		t.Errorf("error = %q, want it to name the range 1 to 36500", err)
+	}
+}
+
+func TestResolveAcceptsCertExpiryDaysBounds(t *testing.T) {
+	for _, n := range []string{"1", "365", "36500"} {
+		if _, _, err := config.Resolve([]string{"-cert-expiry-days", n}, noEnv); err != nil {
+			t.Errorf("Resolve() with -cert-expiry-days %s returned error: %v", n, err)
+		}
+	}
+}
+
 func TestResolveRejectsInvalidCertExpiryDaysEnvVar(t *testing.T) {
 	tests := []struct {
 		name string
@@ -345,6 +364,7 @@ func TestResolveRejectsInvalidCertExpiryDaysEnvVar(t *testing.T) {
 		{"non-numeric", map[string]string{"MAMORI_CERT_EXPIRY_DAYS": "soon"}},
 		{"zero", map[string]string{"MAMORI_CERT_EXPIRY_DAYS": "0"}},
 		{"negative", map[string]string{"MAMORI_CERT_EXPIRY_DAYS": "-5"}},
+		{"overflowing", map[string]string{"MAMORI_CERT_EXPIRY_DAYS": "200000"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
