@@ -89,7 +89,7 @@ func scanTarget(ctx context.Context, client *http.Client, checkers []Checker, bo
 		var body []byte
 		respHeaders, respURL, respStatus, respTLS, body, err = fetchBody(ctx, client, targetURL, reqHeaders)
 		if err == nil {
-			bodyFindings = RunAllBody(bodyCheckers, body, respURL)
+			bodyFindings = RunAllBody(bodyCheckers, body, respHeaders, respURL)
 		}
 	}
 	if err != nil {

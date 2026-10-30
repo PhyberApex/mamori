@@ -1,6 +1,7 @@
 package scanner_test
 
 import (
+	"net/http"
 	"net/url"
 	"testing"
 
@@ -27,7 +28,7 @@ func TestMixedContentCheckerFlagsInsecureReferences(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			findings := scanner.MixedContentChecker{}.CheckBody([]byte(tt.html), mixedContentTargetURL)
+			findings := scanner.MixedContentChecker{}.CheckBody([]byte(tt.html), nil, mixedContentTargetURL)
 			if len(findings) != 1 {
 				t.Fatalf("CheckBody() returned %d findings, want 1: %+v", len(findings), findings)
 			}
@@ -64,7 +65,7 @@ func TestMixedContentCheckerIgnoresSafeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			findings := scanner.MixedContentChecker{}.CheckBody([]byte(tt.html), mixedContentTargetURL)
+			findings := scanner.MixedContentChecker{}.CheckBody([]byte(tt.html), nil, mixedContentTargetURL)
 			if len(findings) != 0 {
 				t.Fatalf("CheckBody() returned %d findings, want 0: %+v", len(findings), findings)
 			}
@@ -77,7 +78,7 @@ func TestMixedContentCheckerSkipsNonHTTPSTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	findings := scanner.MixedContentChecker{}.CheckBody([]byte(`<img src="http://insecure.example.net/logo.png">`), httpTargetURL)
+	findings := scanner.MixedContentChecker{}.CheckBody([]byte(`<img src="http://insecure.example.net/logo.png">`), nil, httpTargetURL)
 	if findings != nil {
 		t.Fatalf("CheckBody() on an http:// target = %+v, want nil (mixed content only applies to https:// pages)", findings)
 	}
@@ -89,7 +90,7 @@ func TestMixedContentCheckerReportsEachOffendingTagIndependently(t *testing.T) {
 		<img src="https://secure.example.net/b.png">
 		<script src="http://insecure.example.net/c.js"></script>
 	`
-	findings := scanner.MixedContentChecker{}.CheckBody([]byte(body), mixedContentTargetURL)
+	findings := scanner.MixedContentChecker{}.CheckBody([]byte(body), nil, mixedContentTargetURL)
 	if len(findings) != 2 {
 		t.Fatalf("CheckBody() returned %d findings, want 2: %+v", len(findings), findings)
 	}
@@ -97,11 +98,52 @@ func TestMixedContentCheckerReportsEachOffendingTagIndependently(t *testing.T) {
 
 func TestRunAllBodyIncludesMixedContentByDefault(t *testing.T) {
 	body := []byte(`<img src="http://insecure.example.net/logo.png">`)
-	findings := scanner.RunAllBody(scanner.DefaultBodyCheckers(), body, mixedContentTargetURL)
+	findings := scanner.RunAllBody(scanner.DefaultBodyCheckers(), body, nil, mixedContentTargetURL)
 	if len(findings) != 1 {
 		t.Fatalf("RunAllBody() returned %d findings, want 1", len(findings))
 	}
 	if findings[0].Severity != scanner.SeverityMedium {
 		t.Errorf("Severity = %q, want %q", findings[0].Severity, scanner.SeverityMedium)
+	}
+}
+
+func TestMixedContentSilentWhenUpgradeInsecureRequests(t *testing.T) {
+	img := `<img src="http://cdn.example.com/a.png">`
+	tests := map[string]struct {
+		html    string
+		headers http.Header
+	}{
+		"meta tag":            {`<html><head><meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests"></head><body>` + img + `</body></html>`, nil},
+		"meta tag mixed case": {`<meta http-equiv="content-security-policy" content="default-src 'self'; Upgrade-Insecure-Requests">` + img, nil},
+		"header":              {img, http.Header{"Content-Security-Policy": {"upgrade-insecure-requests"}}},
+		"header among others": {img, http.Header{"Content-Security-Policy": {"default-src 'self'; UPGRADE-INSECURE-REQUESTS"}}},
+		"header comma policy": {img, http.Header{"Content-Security-Policy": {"default-src 'self', upgrade-insecure-requests"}}},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := (scanner.MixedContentChecker{}).CheckBody([]byte(tt.html), tt.headers, mixedContentTargetURL); len(got) != 0 {
+				t.Fatalf("CheckBody() = %+v, want none", got)
+			}
+		})
+	}
+}
+
+func TestMixedContentStillFlaggedWithoutEnforcedUpgrade(t *testing.T) {
+	img := `<img src="http://cdn.example.com/a.png">`
+	tests := map[string]struct {
+		html    string
+		headers http.Header
+	}{
+		"report-only header":    {img, http.Header{"Content-Security-Policy-Report-Only": {"upgrade-insecure-requests"}}},
+		"unrelated directive":   {img, http.Header{"Content-Security-Policy": {"default-src 'self'"}}},
+		"directive as value":    {img, http.Header{"Content-Security-Policy": {"default-src upgrade-insecure-requests"}}},
+		"meta other http-equiv": {`<meta http-equiv="refresh" content="upgrade-insecure-requests">` + img, nil},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := (scanner.MixedContentChecker{}).CheckBody([]byte(tt.html), tt.headers, mixedContentTargetURL); len(got) != 1 {
+				t.Fatalf("CheckBody() returned %d findings, want 1: %+v", len(got), got)
+			}
+		})
 	}
 }

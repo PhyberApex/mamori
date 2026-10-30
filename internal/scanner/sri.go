@@ -3,6 +3,7 @@ package scanner
 import (
 	"bytes"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 
@@ -15,19 +16,21 @@ import (
 // needs the response URL alongside the body: already parsed, and — like the
 // respURL Checker receives (see the Checker doc comment) — the final
 // post-redirect URL the body was actually fetched from, not necessarily the
-// URL the caller typed.
+// URL the caller typed. It also receives the judged response's headers, for
+// the rare body judgement that depends on one (MixedContentChecker reads an
+// enforced Content-Security-Policy); most BodyCheckers ignore them.
 type BodyChecker interface {
-	CheckBody(body []byte, respURL *url.URL) []Finding
+	CheckBody(body []byte, headers http.Header, respURL *url.URL) []Finding
 }
 
 func DefaultBodyCheckers() []BodyChecker {
 	return []BodyChecker{SRIChecker{}, MixedContentChecker{}}
 }
 
-func RunAllBody(checkers []BodyChecker, body []byte, respURL *url.URL) []Finding {
+func RunAllBody(checkers []BodyChecker, body []byte, headers http.Header, respURL *url.URL) []Finding {
 	var findings []Finding
 	for _, c := range checkers {
-		findings = append(findings, c.CheckBody(body, respURL)...)
+		findings = append(findings, c.CheckBody(body, headers, respURL)...)
 	}
 	return findings
 }
@@ -69,7 +72,7 @@ const sriReference = "https://cheatsheetseries.owasp.org/cheatsheets/Subresource
 // don't need it.
 type SRIChecker struct{}
 
-func (SRIChecker) CheckBody(body []byte, respURL *url.URL) []Finding {
+func (SRIChecker) CheckBody(body []byte, _ http.Header, respURL *url.URL) []Finding {
 	return walkElements(body, func(n *html.Node) *Finding {
 		return sriFinding(n, respURL)
 	})

@@ -23,7 +23,7 @@ func TestSRICheckerFlagsCrossOriginWithoutIntegrity(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			findings := scanner.SRIChecker{}.CheckBody([]byte(tt.html), sriTargetURL)
+			findings := scanner.SRIChecker{}.CheckBody([]byte(tt.html), nil, sriTargetURL)
 			if len(findings) != 1 {
 				t.Fatalf("CheckBody() returned %d findings, want 1", len(findings))
 			}
@@ -65,7 +65,7 @@ func TestSRICheckerIgnoresSafeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			findings := scanner.SRIChecker{}.CheckBody([]byte(tt.html), sriTargetURL)
+			findings := scanner.SRIChecker{}.CheckBody([]byte(tt.html), nil, sriTargetURL)
 			if len(findings) != 0 {
 				t.Fatalf("CheckBody() returned %d findings, want 0: %+v", len(findings), findings)
 			}
@@ -79,7 +79,7 @@ func TestSRICheckerReportsEachOffendingTagIndependently(t *testing.T) {
 		<script src="/same-origin.js"></script>
 		<link rel="stylesheet" href="https://cdn.example.net/b.css">
 	`
-	findings := scanner.SRIChecker{}.CheckBody([]byte(body), sriTargetURL)
+	findings := scanner.SRIChecker{}.CheckBody([]byte(body), nil, sriTargetURL)
 	if len(findings) != 2 {
 		t.Fatalf("CheckBody() returned %d findings, want 2", len(findings))
 	}
@@ -87,7 +87,7 @@ func TestSRICheckerReportsEachOffendingTagIndependently(t *testing.T) {
 
 func TestRunAllBodyFansOutAcrossDefaultBodyCheckers(t *testing.T) {
 	body := []byte(`<script src="https://cdn.example.net/a.js"></script>`)
-	findings := scanner.RunAllBody(scanner.DefaultBodyCheckers(), body, sriTargetURL)
+	findings := scanner.RunAllBody(scanner.DefaultBodyCheckers(), body, nil, sriTargetURL)
 	if len(findings) != 1 {
 		t.Fatalf("RunAllBody() returned %d findings, want 1", len(findings))
 	}
