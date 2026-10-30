@@ -148,7 +148,7 @@ func (t TerminalReporter) Report(findings []Finding, w io.Writer) error {
 				line = fmt.Sprintf("  [%s] %s", statusTag(f, t.Color), f.Message)
 			} else {
 				line = fmt.Sprintf("  [%s] %s (%s)", statusTag(f, t.Color), f.Header, f.Severity)
-				if (f.Status == StatusWeak || f.Status == StatusExposed || f.Status == StatusInsecure) && f.Message != "" {
+				if f.Status != StatusPass && f.Message != "" {
 					line += ": " + f.Message
 				}
 				if f.Status != StatusPass && f.Reference != "" {

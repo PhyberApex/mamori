@@ -1060,3 +1060,21 @@ func TestJSONReporterMarksKnownFindingAndOmitsItOtherwise(t *testing.T) {
 		t.Errorf("non-known finding has a %q key, want it omitted", "known")
 	}
 }
+
+func TestTerminalReporterRendersMessageOnMissing(t *testing.T) {
+	findings := []scanner.Finding{{
+		URL:      "https://a.example",
+		Header:   "Content-Security-Policy",
+		Status:   scanner.StatusMissing,
+		Severity: scanner.SeverityHigh,
+		Message:  "only Content-Security-Policy-Report-Only is set, which reports violations but enforces nothing",
+	}}
+	var buf bytes.Buffer
+	if err := (scanner.TerminalReporter{}).Report(findings, &buf); err != nil {
+		t.Fatal(err)
+	}
+	want := "[MISSING] Content-Security-Policy (high): only Content-Security-Policy-Report-Only is set, which reports violations but enforces nothing"
+	if !strings.Contains(buf.String(), want) {
+		t.Errorf("output missing %q\noutput:\n%s", want, buf.String())
+	}
+}

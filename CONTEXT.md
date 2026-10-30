@@ -9,7 +9,7 @@ A single rule that judges one response — its headers, or (for Transport) the s
 _Avoid_: Rule, Validator, Inspector.
 
 **Finding**:
-The result of running one Checker against one target — a Status, a Severity, a reference link, and (when the Status is `weak`, `exposed`, or `insecure`) a message explaining what's wrong. Its `header` field names the specific thing being reported on: a header name for a Checker/BodyChecker Finding, the literal `Transport` for a Transport Finding, `"TLS (certificate)"` for a TLSChecker Finding, or the probed path (e.g. `.git/config`) for a PathChecker Finding — reused rather than adding a path-specific field, so every reporter renders every kind through the same field.
+The result of running one Checker against one target — a Status, a Severity, a reference link, and (when the Status is not `pass` and there is something specific to say) a message explaining what's wrong. Its `header` field names the specific thing being reported on: a header name for a Checker/BodyChecker Finding, the literal `Transport` for a Transport Finding, `"TLS (certificate)"` for a TLSChecker Finding, or the probed path (e.g. `.git/config`) for a PathChecker Finding — reused rather than adding a path-specific field, so every reporter renders every kind through the same field.
 _Avoid_: Result, Issue, Violation.
 
 **Final URL**:

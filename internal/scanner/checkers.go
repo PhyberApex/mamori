@@ -207,13 +207,19 @@ func frameOptionsWeakness(value string) (weak bool, message string) {
 type CSPChecker struct{}
 
 func (CSPChecker) Check(headers http.Header, _ *url.URL) []Finding {
-	return checkValue(
+	findings := checkValue(
 		headers,
 		"Content-Security-Policy",
 		SeverityHigh,
 		"https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html",
 		cspWeakness,
 	)
+	// A lone Report-Only header reports violations but enforces nothing, so
+	// the Finding stays missing; the message just says why it isn't a bare one.
+	if findings[0].Status == StatusMissing && firstNonBlankValue(headers, "Content-Security-Policy-Report-Only") != "" {
+		findings[0].Message = "only Content-Security-Policy-Report-Only is set, which reports violations but enforces nothing"
+	}
+	return findings
 }
 
 // wildcardSensitiveDirectives are the directives where a bare * source
