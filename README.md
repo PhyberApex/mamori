@@ -11,7 +11,10 @@ plain-HTTP response produces no finding for it, since browsers ignore the
 header on that transport. The transport itself is always judged separately:
 a response that lands on plain HTTP — whether the target was typed that way
 or a redirect chain downgraded it from HTTPS — gets a dedicated `high`
-severity `insecure` finding.
+severity `insecure` finding. `X-Frame-Options` is likewise not judged on a
+response whose enforced `Content-Security-Policy` declares `frame-ancestors`,
+since browsers ignore the header then; `frame-ancestors *` is flagged as a weak
+CSP instead.
 
 ## Install
 
