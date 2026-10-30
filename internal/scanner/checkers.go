@@ -714,9 +714,10 @@ const bannerDisclosureReference = "https://cheatsheetseries.owasp.org/cheatsheet
 
 // BannerDisclosureChecker flags the Server and X-Powered-By headers, plus the
 // other backend-advertising headers on the OWASP Secure Headers Project
-// "headers to remove" list, whenever they carry a value. There's no StatusPass/StatusMissing case here: absence
-// is the desired state and isn't itself worth reporting, so a response with
-// neither header produces no findings at all, mirroring how CookieChecker
+// "headers to remove" list, whenever they carry a value. There's no
+// StatusPass/StatusMissing case here: absence is the desired state and isn't
+// itself worth reporting, so a response with none of them produces no findings
+// at all, mirroring how CookieChecker
 // treats a response with no cookies as having nothing to protect.
 type BannerDisclosureChecker struct{}
 

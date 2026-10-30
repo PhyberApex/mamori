@@ -17,6 +17,12 @@ since browsers ignore the header then; `frame-ancestors *` is flagged as a weak
 CSP instead. `Permissions-Policy` is reported `weak` when it grants `camera`,
 `microphone`, `geolocation`, `display-capture`, `payment` or `usb` to every
 origin (a bare `*` in the allowlist); other features are never flagged.
+Stack-revealing headers are reported `weak` (low severity) whenever they carry
+a value: `Server`, `X-Powered-By`, `X-AspNet-Version`, `X-AspNetMvc-Version`,
+`X-Php-Version`, `X-Generator`, `X-Powered-CMS`, `X-Powered-By-Plesk`,
+`X-Server-Powered-By`, `X-Umbraco-Version` and `X-Joomla-Version`, one finding
+per header present. Proxy markers such as `Via`, `X-Varnish` and `X-Cache` are
+not flagged.
 
 ## Install
 
