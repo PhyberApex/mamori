@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.3.0](https://github.com/PhyberApex/mamori/compare/v1.2.0...v1.3.0) (2026-11-20)
+
+
+### Features
+
+* **site:** add marketing landing page ([#181](https://github.com/PhyberApex/mamori/issues/181)) ([5f13dc6](https://github.com/PhyberApex/mamori/commit/5f13dc67017f4fcc1dad592105a40e44be507cd9))
+
+
+### Bug Fixes
+
+* **deps:** update module golang.org/x/net to v0.63.0 ([#180](https://github.com/PhyberApex/mamori/issues/180)) ([e5cd531](https://github.com/PhyberApex/mamori/commit/e5cd531bfab376bf7f5cf1402cbbae9701cab5d4))
+* **site:** style reference pages with the landing page shell ([#183](https://github.com/PhyberApex/mamori/issues/183)) ([dd191f4](https://github.com/PhyberApex/mamori/commit/dd191f4334c40cf3bff41399fc2608090d366292))
+
 ## [1.2.0](https://github.com/PhyberApex/mamori/compare/v1.1.0...v1.2.0) (2026-11-11)
 
 
