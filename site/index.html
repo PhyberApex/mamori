@@ -1,0 +1,161 @@
+---
+layout: landing
+title: Security header scanner for HTTP endpoints
+image: /assets/og.png
+---
+{%- assign demo = site.data.demo -%}
+{%- assign action_ref = site.mamori_version | prepend: "v" -%}
+
+<section class="hero wrap">
+  <p class="eyebrow">Open source CLI · Go · MIT</p>
+  <h1>Find the security headers your endpoints forgot.</h1>
+  <p class="lead">mamori scans HTTP(S) endpoints concurrently for missing and misconfigured security headers, expiring certificates and exposed files. Every target gets a letter grade, and every finding links to the fix.</p>
+
+  <div class="cta">
+    <div class="cmd">
+      <span class="prompt" aria-hidden="true">$</span>
+      <code id="cmd-hero">go install github.com/PhyberApex/mamori/cmd/mamori@latest</code>
+      <button type="button" data-copy="cmd-hero">copy</button>
+    </div>
+    <a class="link" href="#install">Docker and binaries</a>
+    <a class="link" href="{{ site.repo }}">Source on GitHub</a>
+  </div>
+
+  <figure class="term" data-scan aria-label="Real mamori output for a scan of example.com">
+    <div class="term-bar"><span></span><span></span><span></span><em>zsh</em></div>
+    <div class="term-body">
+      <div class="line"><span class="dim">$</span> {{ demo.command }}</div>
+      <div class="line" data-line><b>{{ demo.target }}</b>  grade <b class="bad">{{ demo.grade }}</b></div>
+      {%- for finding in demo.findings -%}
+      {%- if finding.status == "PASS" -%}{%- assign tone = "ok" -%}{%- elsif finding.severity == "high" -%}{%- assign tone = "bad" -%}{%- else -%}{%- assign tone = "warn" -%}{%- endif %}
+      <div class="line" data-line>  [<span class="{{ tone }}">{{ finding.status }}</span>] {{ finding.header }} ({{ finding.severity }}){% if finding.message %}: {{ finding.message | escape }}{% endif %}{% if finding.reference %} <span class="dim">→ {{ finding.reference }}</span>{% endif %}</div>
+      {%- endfor %}
+      <div class="line" data-line>&nbsp;</div>
+      <div class="line" data-line><b>{{ demo.summary }}</b></div>
+    </div>
+    <figcaption>Real output from a scan of example.com. Exit code 1, because <code>-fail-on high</code> tripped.</figcaption>
+  </figure>
+</section>
+
+<section class="wrap section" id="checks">
+  <h2>{{ site.data.checks | size }} checks, each with a fixed severity</h2>
+  <p class="lead">Response headers, the transport, the certificate, the HTML body. Checks marked opt-in send extra requests, so they stay off until you ask.</p>
+
+  <ul class="checks">
+    {%- for check in site.data.checks %}
+    <li>
+      {%- if check.slug %}<a href="{{ '/checks/' | append: check.slug | relative_url }}">{% else %}<div>{% endif %}
+        <span class="check-head">
+          <span class="check-name">{{ check.name | escape }}</span>
+          {%- if check.opt_in %}<span class="tag tag-opt">opt-in</span>{% endif -%}
+          {%- assign severities = check.severity | split: " / " -%}
+          {%- for severity in severities %}<span class="tag tag-{{ severity }}">{{ severity }}</span>{% endfor -%}
+        </span>
+        <span class="check-blurb">{{ check.blurb | escape }}</span>
+      {%- if check.slug %}</a>{% else %}</div>{% endif -%}
+    </li>
+    {%- endfor %}
+  </ul>
+  <p class="after"><a class="link" href="{{ '/checks/' | relative_url }}">Read the full check reference</a></p>
+</section>
+
+<section class="wrap section" id="judging">
+  <h2>Judged the way a browser would</h2>
+  <p class="lead">A header scanner is only useful if you can trust a red line. mamori reports what the browser actually enforces on the response it actually got.</p>
+
+  <div class="cols">
+    <article>
+      <h3>Missing is not weak</h3>
+      <p>A header that isn't set and a header set to a value that does nothing are different problems. mamori reports them as <code>missing</code> and <code>weak</code>, and a weak finding says which value is the problem.</p>
+    </article>
+    <article>
+      <h3>No findings for ignored headers</h3>
+      <p>HSTS is only judged on HTTPS responses. <code>X-Frame-Options</code> is withheld when CSP declares <code>frame-ancestors</code>. <code>Cache-Control</code> only matters once a cookie is set.</p>
+    </article>
+    <article>
+      <h3>After the redirects</h3>
+      <p>Findings are judged on the final response. If <code>https://</code> redirects down to plain <code>http://</code>, that is a high severity <code>insecure</code> finding, and the report names the URL it landed on.</p>
+    </article>
+  </div>
+
+  <dl class="grades" aria-label="How a target's grade is derived">
+    <div><dt class="ok">A</dt><dd>nothing gating</dd></div>
+    <div><dt class="low">B</dt><dd>worst finding is low</dd></div>
+    <div><dt class="warn">C</dt><dd>worst finding is medium</dd></div>
+    <div><dt class="bad">D</dt><dd>worst finding is high</dd></div>
+  </dl>
+</section>
+
+<section class="wrap section" id="ci">
+  <h2>Made to gate a pipeline</h2>
+  <p class="lead">Run it as a GitHub Action or as a plain binary. Findings land in the repository's Security tab as SARIF, and the exit code tells CI what happened without parsing output.</p>
+
+  <div class="split">
+    <div class="code">
+      <div class="code-bar"><em>.github/workflows/scan.yml</em><button type="button" data-copy="code-action">copy</button></div>
+<pre id="code-action"><code>permissions:
+  security-events: write
+
+steps:
+  - uses: PhyberApex/mamori@{{ action_ref }}
+    with:
+      targets: |
+        https://example.com
+        https://example.org
+      fail-on: high
+      upload-sarif: true</code></pre>
+    </div>
+
+    <div class="code">
+      <div class="code-bar"><em>.mamori.yaml</em><button type="button" data-copy="code-config">copy</button></div>
+<pre id="code-config"><code>rate: 2
+baseline: ./previous-scan.json
+suppressions:
+  - host: https://legacy.example.com
+    reason: migration tracked in JIRA-456
+    expires: 2026-12-31</code></pre>
+    </div>
+  </div>
+
+  <div class="cols">
+    <article>
+      <h3>Fail on what matters</h3>
+      <p><code>-fail-on low|medium|high</code> sets the bar. Exit <code>1</code> means findings tripped it, <code>2</code> a usage or config error, <code>3</code> a failed hook, <code>4</code> an interrupted scan.</p>
+    </article>
+    <article>
+      <h3>Gate on what changed</h3>
+      <p>Save a scan with <code>-o json</code> and pass it back as <code>-baseline</code>. Findings already in it are marked known and stop failing the build, so you can adopt mamori on a codebase that isn't clean yet.</p>
+    </article>
+    <article>
+      <h3>Accepted risk that expires</h3>
+      <p>A suppression carries a reason and an optional expiry date. The finding stays visible in every report, and once the date passes it gates again.</p>
+    </article>
+  </div>
+</section>
+
+<section class="wrap section" id="scanning">
+  <h2>Considerate towards the thing it scans</h2>
+  <ul class="facts">
+    <li><code>-workers</code><span>Targets are scanned concurrently, ten at a time by default.</span></li>
+    <li><code>-rate</code><span>Caps requests per second to any single host, shared across the whole scan.</span></li>
+    <li><code>-H</code><span>Adds request headers, for endpoints behind auth.</span></li>
+    <li><code>User-Agent</code><span>Every request identifies itself as <code>mamori/{{ site.mamori_version }}</code>, so you can allowlist it in a WAF.</span></li>
+    <li><code>-pre-scan-hook</code><span>Runs a command before and after the scan, for example to pause and restore a WAF rule.</span></li>
+    <li><code>-o</code><span>Terminal, newline-delimited JSON or SARIF 2.1.0.</span></li>
+  </ul>
+</section>
+
+<section class="wrap section" id="install">
+  <h2>Install</h2>
+  <p class="lead">A single binary or a container image. Pick whichever fits where you scan from.</p>
+
+  <ul class="facts installs">
+    <li><h3>Go</h3><div class="cmd"><span class="prompt" aria-hidden="true">$</span><code id="cmd-go">go install github.com/PhyberApex/mamori/cmd/mamori@latest</code><button type="button" data-copy="cmd-go">copy</button></div></li>
+    <li><h3>Docker</h3><div class="cmd"><span class="prompt" aria-hidden="true">$</span><code id="cmd-docker">docker run --rm ghcr.io/phyberapex/mamori:latest https://example.com</code><button type="button" data-copy="cmd-docker">copy</button></div></li>
+    <li><h3>Binary</h3><span>Linux and macOS builds for amd64 and arm64 are attached to every <a href="{{ site.repo }}/releases/latest">release</a>.</span></li>
+  </ul>
+
+  <h3 class="then">Then point it at something</h3>
+  <div class="cmd cmd-run"><span class="prompt" aria-hidden="true">$</span><code id="cmd-run">mamori https://example.com https://example.org</code><button type="button" data-copy="cmd-run">copy</button></div>
+  <p class="after">Flags, environment variables and the config file are documented in the <a href="{{ site.repo }}#usage">README</a>.</p>
+</section>

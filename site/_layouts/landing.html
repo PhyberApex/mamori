@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0d1117">
+  {% seo %}
+  <link rel="icon" href="{{ '/assets/favicon.svg' | relative_url }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ '/assets/landing.css' | relative_url }}">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <a class="brand" href="{{ '/' | relative_url }}"><span class="kanji" aria-hidden="true">守</span>mamori</a>
+      <nav aria-label="Primary">
+        <a href="#checks">Checks</a>
+        <a href="#ci">CI</a>
+        <a href="#install">Install</a>
+        <a href="{{ '/checks/' | relative_url }}">Reference</a>
+        <a href="{{ site.repo }}">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    {{ content }}
+  </main>
+
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <p><span class="kanji" aria-hidden="true">守</span>mamori, from 守り, Japanese for protection. MIT licensed.</p>
+      <nav aria-label="Footer">
+        <a href="{{ '/checks/' | relative_url }}">Check reference</a>
+        <a href="{{ site.repo }}/blob/main/CHANGELOG.md">Changelog</a>
+        <a href="{{ site.repo }}/issues">Issues</a>
+        <a href="{{ site.repo }}">GitHub</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script>
+    const copyText = (button) =>
+      navigator.clipboard.writeText(document.getElementById(button.dataset.copy).innerText.trim());
+
+    const flashCopied = (button) => {
+      const label = button.textContent;
+      button.textContent = "copied";
+      setTimeout(() => { button.textContent = label; }, 1400);
+    };
+
+    document.querySelectorAll("[data-copy]").forEach((button) =>
+      button.addEventListener("click", () => copyText(button).then(() => flashCopied(button))));
+
+    const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const scan = document.querySelector("[data-scan]");
+    if (scan && !reducedMotion) {
+      scan.classList.add("is-replaying");
+      [...scan.querySelectorAll("[data-line]")].forEach((line, index) =>
+        setTimeout(() => line.classList.add("is-shown"), 500 + index * 110));
+    }
+  </script>
+</body>
+</html>

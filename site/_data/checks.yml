@@ -1,0 +1,96 @@
+- name: Transport
+  severity: high
+  slug: transport
+  blurb: The judged response arrived over plain HTTP, typed that way or downgraded by a redirect.
+- name: TLS (certificate)
+  severity: medium
+  blurb: The leaf certificate expires within 30 days (tunable).
+- name: TLS (protocol)
+  code: true
+  severity: medium
+  slug: tls-protocol
+  opt_in: true
+  blurb: The host still accepts TLS 1.0 or 1.1 handshakes.
+- name: Strict-Transport-Security
+  code: true
+  severity: high
+  slug: strict-transport-security
+  blurb: Missing, or a max-age shorter than six months.
+- name: X-Content-Type-Options
+  code: true
+  severity: medium
+  slug: x-content-type-options
+  blurb: MIME sniffing isn't switched off.
+- name: X-Frame-Options
+  code: true
+  severity: medium
+  slug: x-frame-options
+  blurb: Clickjacking defence, withheld when CSP declares frame-ancestors.
+- name: Content-Security-Policy
+  code: true
+  severity: high
+  slug: content-security-policy
+  blurb: Missing, or weakened by values like 'unsafe-inline'.
+- name: Referrer-Policy
+  code: true
+  severity: low
+  slug: referrer-policy
+  blurb: Missing, or no recognised policy token.
+- name: Cross-Origin-Opener-Policy
+  code: true
+  severity: medium
+  slug: cross-origin-opener-policy
+  blurb: No isolation from cross-origin popups and openers.
+- name: Cross-Origin-Embedder-Policy
+  code: true
+  severity: low
+  slug: cross-origin-embedder-policy
+  blurb: Cross-origin subresources load without opting in.
+- name: Cross-Origin-Resource-Policy
+  code: true
+  severity: medium
+  slug: cross-origin-resource-policy
+  blurb: Other origins can embed the response.
+- name: Set-Cookie
+  code: true
+  severity: high / medium
+  slug: set-cookie
+  blurb: Cookies missing Secure, HttpOnly or SameSite.
+- name: Cache-Control
+  code: true
+  severity: medium
+  blurb: A cookie-setting response a shared cache may store, lacking no-store.
+- name: Permissions-Policy
+  code: true
+  severity: medium
+  slug: permissions-policy
+  blurb: Missing, or camera, microphone and friends granted to every origin.
+- name: Server / X-Powered-By / …
+  label: "`Server` / `X-Powered-By` / …"
+  severity: low
+  slug: banner-disclosure
+  blurb: Headers that reveal the stack behind the endpoint.
+- name: Access-Control-Allow-Origin
+  code: true
+  severity: high
+  slug: cors
+  blurb: Reflects any Origin, or *, while also allowing credentials.
+- name: X-XSS-Protection
+  code: true
+  severity: low
+  slug: x-xss-protection
+  blurb: The legacy XSS auditor isn't explicitly switched off with 0.
+- name: <script> / <link> (SRI)
+  label: "`<script>` / `<link>` (SRI)"
+  severity: low
+  slug: subresource-integrity
+  blurb: Cross-origin scripts and styles loaded without an integrity attribute.
+- name: Mixed Content
+  severity: medium
+  slug: mixed-content
+  blurb: An HTTPS page that pulls subresources over plain HTTP.
+- name: Sensitive Path Exposure
+  severity: high / medium / low
+  slug: sensitive-path-exposure
+  opt_in: true
+  blurb: .git, .env, credential stores and backups reachable at the origin.
