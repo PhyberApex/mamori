@@ -1,0 +1,56 @@
+command: mamori -fail-on high https://example.com
+target: https://example.com
+grade: D
+summary: "1 target · 10 missing, 1 weak · fail-on high: failed"
+findings:
+  - status: PASS
+    header: Transport
+    severity: high
+  - status: MISSING
+    header: Strict-Transport-Security
+    severity: high
+    reference: https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Strict_Transport_Security_Cheat_Sheet.html
+  - status: MISSING
+    header: X-Content-Type-Options
+    severity: medium
+    reference: https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html#x-content-type-options
+  - status: MISSING
+    header: X-Frame-Options
+    severity: medium
+    reference: https://cheatsheetseries.owasp.org/cheatsheets/Clickjacking_Defense_Cheat_Sheet.html
+  - status: MISSING
+    header: Content-Security-Policy
+    severity: high
+    reference: https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html
+  - status: MISSING
+    header: Referrer-Policy
+    severity: low
+    reference: https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html#referrer-policy
+  - status: MISSING
+    header: Cross-Origin-Opener-Policy
+    severity: medium
+    reference: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cross-Origin-Opener-Policy
+  - status: MISSING
+    header: Cross-Origin-Embedder-Policy
+    severity: low
+    reference: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cross-Origin-Embedder-Policy
+  - status: MISSING
+    header: Cross-Origin-Resource-Policy
+    severity: medium
+    reference: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cross-Origin-Resource-Policy
+  - status: MISSING
+    header: Permissions-Policy
+    severity: medium
+    reference: https://owasp.org/www-project-secure-headers/#permissions-policy
+  - status: WEAK
+    header: Server
+    severity: low
+    message: '"cloudflare" reveals backend software/version info useful for fingerprinting the server'
+    reference: https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html
+  - status: MISSING
+    header: X-XSS-Protection
+    severity: low
+    reference: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-XSS-Protection
+  - status: PASS
+    header: TLS (certificate)
+    severity: medium

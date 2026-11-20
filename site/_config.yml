@@ -1,18 +1,11 @@
 title: mamori
-description: Concurrent HTTP security header scanner — check reference
+description: Concurrent security scanner for HTTP endpoints. Checks headers, TLS and exposed paths, grades every target and links each finding to its fix.
 theme: minima
 baseurl: "/mamori"
 url: "https://phyberapex.github.io"
 
 header_pages:
-  - checks/strict-transport-security.md
-  - checks/x-content-type-options.md
-  - checks/x-frame-options.md
-  - checks/content-security-policy.md
-  - checks/referrer-policy.md
-  - checks/cross-origin-opener-policy.md
-  - checks/cross-origin-embedder-policy.md
-  - checks/cross-origin-resource-policy.md
-  - checks/set-cookie.md
-  - checks/permissions-policy.md
-  - checks/cors.md
+  - checks/index.md
+
+mamori_version: "1.2.0" # x-release-please-version
+repo: https://github.com/PhyberApex/mamori
