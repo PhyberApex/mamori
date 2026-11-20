@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#0d1117">
   {% seo %}
   <link rel="icon" href="{{ '/assets/favicon.svg' | relative_url }}" type="image/svg+xml">
-  <link rel="stylesheet" href="{{ '/assets/landing.css' | relative_url }}">
+  <link rel="stylesheet" href="{{ '/assets/site.css' | relative_url }}">
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -16,9 +16,9 @@
     <div class="wrap topbar-inner">
       <a class="brand" href="{{ '/' | relative_url }}"><span class="kanji" aria-hidden="true">守</span>mamori</a>
       <nav aria-label="Primary">
-        <a href="#checks">Checks</a>
-        <a href="#ci">CI</a>
-        <a href="#install">Install</a>
+        <a href="{{ '/#checks' | relative_url }}">Checks</a>
+        <a href="{{ '/#ci' | relative_url }}">CI</a>
+        <a href="{{ '/#install' | relative_url }}">Install</a>
         <a href="{{ '/checks/' | relative_url }}">Reference</a>
         <a href="{{ site.repo }}">GitHub</a>
       </nav>

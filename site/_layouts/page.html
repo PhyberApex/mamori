@@ -1,0 +1,10 @@
+---
+layout: default
+---
+<article class="wrap prose">
+  {%- if page.url contains "/checks/" and page.url != "/checks/" %}
+  <p class="crumb"><a href="{{ '/checks/' | relative_url }}">Check reference</a></p>
+  {%- endif %}
+  <h1>{{ page.title | escape }}</h1>
+  {{ content }}
+</article>

@@ -110,7 +110,7 @@ p code, li code, figcaption code {
 .topbar nav a:hover, .footer nav a:hover { color: var(--accent); }
 
 @media (max-width: 40rem) {
-  .topbar nav a[href^="#"] { display: none; }
+  .topbar nav a[href*="#"] { display: none; }
 }
 
 /* ── Hero ────────────────────────────────────────────────────────────────── */
@@ -406,6 +406,82 @@ figcaption {
 }
 
 .cmd-run { margin-top: 0.9rem; border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+
+/* ── Reference pages ─────────────────────────────────────────────────────── */
+
+.prose { max-width: 50rem; padding-block: clamp(2.5rem, 6vw, 4rem) 0; }
+
+.prose .crumb { margin: 0 0 1rem; font: 0.85rem var(--mono); }
+.crumb a::before { content: "← "; }
+
+.prose h1 { max-width: none; font-size: clamp(1.6rem, 4.5vw, 2.4rem); overflow-wrap: anywhere; }
+
+.prose h2 {
+  margin-top: 2.75rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 1.2rem;
+  letter-spacing: 0;
+}
+
+.prose h3 { margin-top: 2rem; }
+
+.prose p, .prose ul, .prose ol { margin: 1rem 0 0; }
+.prose ul, .prose ol { padding-left: 1.4rem; }
+.prose li + li { margin-top: 0.4rem; }
+.prose p code, .prose li code { white-space: normal; overflow-wrap: anywhere; }
+.prose strong { font-weight: 600; }
+
+.prose pre {
+  margin: 1.25rem 0 0;
+  padding: 1rem 1.1rem;
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  line-height: 1.7;
+}
+
+.prose table {
+  width: 100%;
+  margin: 1.75rem 0 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  border-spacing: 0;
+  overflow: hidden;
+  font-size: 0.92rem;
+}
+
+.prose th, .prose td {
+  padding: 0.6rem 0.9rem;
+  border-top: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.prose th {
+  border-top: 0;
+  background: var(--surface);
+  color: var(--muted);
+  font: 0.72rem var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.prose td code {
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.prose td a { text-decoration: none; }
+.prose td a:hover { text-decoration: underline; }
+.prose td:last-child { color: var(--muted); font: 0.82rem/1.9 var(--mono); }
+.prose tbody tr:hover { background: var(--surface); }
 
 /* ── Footer ──────────────────────────────────────────────────────────────── */
 
